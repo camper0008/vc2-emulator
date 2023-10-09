@@ -7,8 +7,8 @@ use crate::{
 
 pub type Immediate = crate::arch::Word;
 
-pub struct Vm<const MEMORY_SIZE: usize, const HALT_MS: u64> {
-    memory: [u8; MEMORY_SIZE],
+pub struct Vm<const MEMORY_BYTE_SIZE: usize, const HALT_MS: u64> {
+    memory: [u8; MEMORY_BYTE_SIZE],
     registers: VmRegisters,
 }
 
@@ -132,9 +132,9 @@ pub fn invalid_architecture_message<E>(_error: E) -> String {
     String::from("architecture should support 32 bit word pointers")
 }
 
-impl<const MEMORY_SIZE: usize, const HALT_MS: u64> Vm<MEMORY_SIZE, HALT_MS> {
+impl<const MEMORY_BYTE_SIZE: usize, const HALT_MS: u64> Vm<MEMORY_BYTE_SIZE, HALT_MS> {
     pub fn new(instructions: Vec<u8>) -> Self {
-        let mut memory = [0; MEMORY_SIZE];
+        let mut memory = [0; MEMORY_BYTE_SIZE];
         instructions
             .into_iter()
             .enumerate()
@@ -176,27 +176,27 @@ impl<const MEMORY_SIZE: usize, const HALT_MS: u64> Vm<MEMORY_SIZE, HALT_MS> {
                 Config::RegisterFromRegister(destination?, source?)
             }
             (Selector::Register, Selector::Immediate) => {
-                Config::RegisterFromImmediate(destination?, self.consume_immediate())
+                Config::RegisterFromImmediate(destination?, self.consume_immediate()?)
             }
             (Selector::Register, Selector::RegisterAddress) => {
                 Config::RegisterFromRegisterAddress(destination?, source?)
             }
             (Selector::Register, Selector::ImmediateAddress) => {
-                Config::RegisterFromImmediateAddress(destination?, self.consume_immediate())
+                Config::RegisterFromImmediateAddress(destination?, self.consume_immediate()?)
             }
             (Selector::RegisterAddress, Selector::Register) => {
                 Config::RegisterAddressFromRegister(destination?, source?)
             }
             (Selector::RegisterAddress, Selector::Immediate) => {
-                Config::RegisterAddressFromImmediate(destination?, self.consume_immediate())
+                Config::RegisterAddressFromImmediate(destination?, self.consume_immediate()?)
             }
             (Selector::ImmediateAddress, Selector::Register) => {
-                Config::ImmediateAddressFromRegister(self.consume_immediate(), source?)
+                Config::ImmediateAddressFromRegister(self.consume_immediate()?, source?)
             }
             (Selector::ImmediateAddress, Selector::Immediate) => {
                 Config::ImmediateAddressFromImmediate(
-                    self.consume_immediate(),
-                    self.consume_immediate(),
+                    self.consume_immediate()?,
+                    self.consume_immediate()?,
                 )
             }
             variant => Err(format!(
@@ -209,7 +209,8 @@ impl<const MEMORY_SIZE: usize, const HALT_MS: u64> Vm<MEMORY_SIZE, HALT_MS> {
     }
 
     fn parse_mov(&mut self) -> Result<Instruction, String> {
-        let input = self.current_byte();
+        self.step();
+        let input = self.current_byte()?;
         self.step();
 
         let destination_selector: Selector = ((input & 0b1100_0000) >> 6).try_into()?;
@@ -233,27 +234,27 @@ impl<const MEMORY_SIZE: usize, const HALT_MS: u64> Vm<MEMORY_SIZE, HALT_MS> {
     }
     fn parse_not(&mut self) -> Result<Instruction, String> {
         self.step();
-        let input = self.current_byte();
+        let input = self.current_byte()?;
         self.step();
 
         let destination = (input & 0b1100) >> 2;
         let destination = destination.try_into()?;
         Ok(Instruction::Not(destination))
     }
-    fn consume_immediate(&mut self) -> u32 {
-        let byte_0 = self.current_byte();
+    fn consume_immediate(&mut self) -> Result<u32, String> {
+        let byte_0 = self.current_byte()?;
         self.step();
-        let byte_1 = self.current_byte();
+        let byte_1 = self.current_byte()?;
         self.step();
-        let byte_2 = self.current_byte();
+        let byte_2 = self.current_byte()?;
         self.step();
-        let byte_3 = self.current_byte();
+        let byte_3 = self.current_byte()?;
         self.step();
-        u32::from_be_bytes([byte_0, byte_1, byte_2, byte_3])
+        Ok(u32::from_be_bytes([byte_0, byte_1, byte_2, byte_3]))
     }
     fn parse_jmp(&mut self) -> Result<Instruction, String> {
         self.step();
-        let input = self.current_byte();
+        let input = self.current_byte()?;
         self.step();
 
         let selector = ((input & 0b1100_0000) >> 6).try_into()?;
@@ -261,16 +262,16 @@ impl<const MEMORY_SIZE: usize, const HALT_MS: u64> Vm<MEMORY_SIZE, HALT_MS> {
 
         let config = match selector {
             Selector::Register => JmpConfig::Register(destination?),
-            Selector::Immediate => JmpConfig::Immediate(self.consume_immediate()),
+            Selector::Immediate => JmpConfig::Immediate(self.consume_immediate()?),
             Selector::RegisterAddress => JmpConfig::RegisterAddress(destination?),
-            Selector::ImmediateAddress => JmpConfig::ImmediateAddress(self.consume_immediate()),
+            Selector::ImmediateAddress => JmpConfig::ImmediateAddress(self.consume_immediate()?),
         };
 
         Ok(Instruction::Jmp(config))
     }
 
     fn parse_conditional_jmp(&mut self) -> Result<Instruction, String> {
-        let instruction: NamedInstruction = self.current_byte().try_into()?;
+        let instruction: NamedInstruction = self.current_byte()?.try_into()?;
         self.step();
         let constructor = match instruction {
             named_instruction::Jz => Instruction::Jz,
@@ -284,7 +285,7 @@ impl<const MEMORY_SIZE: usize, const HALT_MS: u64> Vm<MEMORY_SIZE, HALT_MS> {
             field => Err(format!("invalid instruction {field:?}"))?,
         };
 
-        let input = self.current_byte();
+        let input = self.current_byte()?;
         self.step();
 
         let destination_selector: Selector = ((input & 0b1100_0000) >> 6).try_into()?;
@@ -299,7 +300,7 @@ impl<const MEMORY_SIZE: usize, const HALT_MS: u64> Vm<MEMORY_SIZE, HALT_MS> {
     }
 
     fn parse_math_op(&mut self) -> Result<Instruction, String> {
-        let instruction: NamedInstruction = self.current_byte().try_into()?;
+        let instruction: NamedInstruction = self.current_byte()?.try_into()?;
         self.step();
         let constructor = match instruction {
             named_instruction::Or => Instruction::Or,
@@ -321,7 +322,7 @@ impl<const MEMORY_SIZE: usize, const HALT_MS: u64> Vm<MEMORY_SIZE, HALT_MS> {
             ),
         };
 
-        let input = self.current_byte();
+        let input = self.current_byte()?;
         self.step();
 
         let selector = (input & 0b0011_0000) >> 4;
@@ -334,20 +335,20 @@ impl<const MEMORY_SIZE: usize, const HALT_MS: u64> Vm<MEMORY_SIZE, HALT_MS> {
         let field = match selector {
             Selector::Register => RegisterDestinationConfig::Register(destination, source),
             Selector::Immediate => {
-                RegisterDestinationConfig::Immediate(destination, self.consume_immediate())
+                RegisterDestinationConfig::Immediate(destination, self.consume_immediate()?)
             }
             Selector::RegisterAddress => {
                 RegisterDestinationConfig::RegisterAddress(destination, source)
             }
             Selector::ImmediateAddress => {
-                RegisterDestinationConfig::ImmediateAddress(destination, self.consume_immediate())
+                RegisterDestinationConfig::ImmediateAddress(destination, self.consume_immediate()?)
             }
         };
 
         Ok(constructor(field))
     }
     fn parse_next_instruction(&mut self) -> Result<Instruction, String> {
-        let next: NamedInstruction = self.current_byte().try_into()?;
+        let next: NamedInstruction = self.current_byte()?.try_into()?;
         match next {
             named_instruction::Nop => self.parse_nop(),
             named_instruction::Hlt => self.parse_htl(),
@@ -381,12 +382,12 @@ impl<const MEMORY_SIZE: usize, const HALT_MS: u64> Vm<MEMORY_SIZE, HALT_MS> {
             | named_instruction::Jlt => self.parse_conditional_jmp(),
         }
     }
-    fn register_value(&self, register: &Register) -> &Word {
+    fn register_value(&self, register: &Register) -> Word {
         match register {
-            Register::GeneralPurpose0 => &self.registers.general_purpose_0,
-            Register::GeneralPurpose1 => &self.registers.general_purpose_1,
-            Register::Flag => &self.registers.flag,
-            Register::ProgramCounter => &self.registers.program_counter,
+            Register::GeneralPurpose0 => self.registers.general_purpose_0,
+            Register::GeneralPurpose1 => self.registers.general_purpose_1,
+            Register::Flag => self.registers.flag,
+            Register::ProgramCounter => self.registers.program_counter,
         }
     }
     fn set_register_value(&mut self, register: &Register, value: Word) {
@@ -423,27 +424,27 @@ impl<const MEMORY_SIZE: usize, const HALT_MS: u64> Vm<MEMORY_SIZE, HALT_MS> {
     fn run_mov(&mut self, config: Config) -> Result<(), String> {
         match config {
             Config::RegisterFromRegister(destination, source) => {
-                self.set_register_value(&destination, *self.register_value(&source))
+                self.set_register_value(&destination, self.register_value(&source))
             }
             Config::RegisterFromImmediate(destination, source) => {
                 self.set_register_value(&destination, source)
             }
             Config::RegisterFromRegisterAddress(destination, source) => self.set_register_value(
                 &destination,
-                self.memory_value(self.register_value(&source))?,
+                self.memory_value(&self.register_value(&source))?,
             ),
             Config::RegisterFromImmediateAddress(destination, source) => {
                 self.set_register_value(&destination, self.memory_value(&source)?)
             }
             Config::RegisterAddressFromRegister(destination, source) => self.set_memory_value(
-                self.register_value(&destination),
-                *self.register_value(&source),
+                &self.register_value(&destination),
+                self.register_value(&source),
             )?,
             Config::RegisterAddressFromImmediate(destination, source) => {
-                self.set_memory_value(self.register_value(&destination), source)?
+                self.set_memory_value(&self.register_value(&destination), source)?
             }
             Config::ImmediateAddressFromRegister(destination, source) => {
-                self.set_memory_value(&destination, *self.register_value(&source))?
+                self.set_memory_value(&destination, self.register_value(&source))?
             }
             Config::ImmediateAddressFromImmediate(destination, source) => {
                 self.set_memory_value(&destination, source)?
@@ -451,13 +452,16 @@ impl<const MEMORY_SIZE: usize, const HALT_MS: u64> Vm<MEMORY_SIZE, HALT_MS> {
         }
         Ok(())
     }
+    fn run_not(&mut self, config: Register) {
+        self.set_register_value(&config, !self.register_value(&config))
+    }
     pub fn run_next_instruction(&mut self) -> Result<(), String> {
         let instruction = self.parse_next_instruction()?;
         match instruction {
             Instruction::Nop => (),
             Instruction::Htl => std::thread::sleep(Duration::from_millis(HALT_MS)),
             Instruction::Mov(config) => self.run_mov(config)?,
-            Instruction::Not(_) => todo!(),
+            Instruction::Not(config) => self.run_not(config),
             Instruction::Or(_) => todo!(),
             Instruction::And(_) => todo!(),
             Instruction::Xor(_) => todo!(),
