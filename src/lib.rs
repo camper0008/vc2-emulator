@@ -1,2 +1,3 @@
 pub mod arch;
-pub mod parser;
+mod named_instruction;
+pub mod vm;
