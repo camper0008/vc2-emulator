@@ -1,1 +1,1 @@
-pub type USize = u32;
+pub type Word = u32;

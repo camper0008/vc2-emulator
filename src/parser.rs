@@ -2,7 +2,7 @@ use self::named_instruction::NamedInstruction;
 
 mod named_instruction;
 
-pub type Immediate = crate::arch::USize;
+pub type Immediate = crate::arch::Word;
 
 pub struct Parser<Iter: Iterator<Item = u8>> {
     feed: Iter,
