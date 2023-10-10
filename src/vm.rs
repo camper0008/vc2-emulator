@@ -19,17 +19,24 @@ pub struct VmRegisters {
     program_counter: Word,
 }
 
-#[repr(u8)]
 pub enum Flag {
-    Zero = 0,
-    Less = 1,
-    Equal = 2,
-    Overflow = 3,
-    Carry = 4,
-    Borrow = 5,
+    Overflow,
+    CarryOrBorrow,
+    Equal,
+    Less,
 }
 
-#[repr(u8)]
+impl Flag {
+    pub fn is_active(&self, value: u32) -> bool {
+        match self {
+            Flag::Overflow => (value & 0b0000_0001) != 0,
+            Flag::CarryOrBorrow => (value & 0b0000_0010) >> 1 != 0,
+            Flag::Equal => (value & 0b0000_0100) >> 2 != 0,
+            Flag::Less => (value & 0b0000_1000) >> 3 != 0,
+        }
+    }
+}
+
 pub enum Register {
     GeneralPurpose0,
     GeneralPurpose1,
@@ -85,13 +92,6 @@ pub enum Config {
     ImmediateAddressFromImmediate(Immediate, Immediate),
 }
 
-pub enum RegisterDestinationConfig {
-    Register(Register, Register),
-    Immediate(Register, Immediate),
-    RegisterAddress(Register, Register),
-    ImmediateAddress(Register, Immediate),
-}
-
 pub enum JmpConfig {
     Register(Register),
     Immediate(Immediate),
@@ -104,20 +104,20 @@ pub enum Instruction {
     Htl,
     Mov(Config),
     Not(Register),
-    Or(RegisterDestinationConfig),
-    And(RegisterDestinationConfig),
-    Xor(RegisterDestinationConfig),
-    Shl(RegisterDestinationConfig),
-    Shr(RegisterDestinationConfig),
-    Add(RegisterDestinationConfig),
-    Sub(RegisterDestinationConfig),
-    Mul(RegisterDestinationConfig),
-    IMul(RegisterDestinationConfig),
-    Div(RegisterDestinationConfig),
-    IDiv(RegisterDestinationConfig),
-    Rem(RegisterDestinationConfig),
-    Cmp(RegisterDestinationConfig),
-    Jmp(JmpConfig),
+    Or(Config),
+    And(Config),
+    Xor(Config),
+    Shl(Config),
+    Shr(Config),
+    Add(Config),
+    Sub(Config),
+    Mul(Config),
+    IMul(Config),
+    Div(Config),
+    IDiv(Config),
+    Rem(Config),
+    Cmp(Config),
+    Jmp(bool, JmpConfig),
     Jz(Config),
     Jnz(Config),
     Jeq(Config),
@@ -259,6 +259,7 @@ impl<const MEMORY_BYTE_SIZE: usize, const HALT_MS: u64> Vm<MEMORY_BYTE_SIZE, HAL
 
         let selector = ((input & 0b1100_0000) >> 6).try_into()?;
         let destination = ((input & 0b0000_1100) >> 2).try_into();
+        let is_absolute = (input & 0b0000_0001) != 0;
 
         let config = match selector {
             Selector::Register => JmpConfig::Register(destination?),
@@ -267,7 +268,7 @@ impl<const MEMORY_BYTE_SIZE: usize, const HALT_MS: u64> Vm<MEMORY_BYTE_SIZE, HAL
             Selector::ImmediateAddress => JmpConfig::ImmediateAddress(self.consume_immediate()?),
         };
 
-        Ok(Instruction::Jmp(config))
+        Ok(Instruction::Jmp(is_absolute, config))
     }
 
     fn parse_conditional_jmp(&mut self) -> Result<Instruction, String> {
@@ -325,27 +326,19 @@ impl<const MEMORY_BYTE_SIZE: usize, const HALT_MS: u64> Vm<MEMORY_BYTE_SIZE, HAL
         let input = self.current_byte()?;
         self.step();
 
-        let selector = (input & 0b0011_0000) >> 4;
-        let selector: Selector = selector.try_into()?;
+        let destination_selector = (input & 0b1100_0000) >> 6;
+        let destination_selector: Selector = destination_selector.try_into()?;
+        let source_selector = (input & 0b0011_0000) >> 4;
+        let source_selector: Selector = source_selector.try_into()?;
         let destination = (input & 0b0000_1100) >> 2;
-        let destination: Register = destination.try_into()?;
+        let destination = destination.try_into();
         let source = input & 0b0000_0011;
-        let source: Register = source.try_into()?;
+        let source = source.try_into();
 
-        let field = match selector {
-            Selector::Register => RegisterDestinationConfig::Register(destination, source),
-            Selector::Immediate => {
-                RegisterDestinationConfig::Immediate(destination, self.consume_immediate()?)
-            }
-            Selector::RegisterAddress => {
-                RegisterDestinationConfig::RegisterAddress(destination, source)
-            }
-            Selector::ImmediateAddress => {
-                RegisterDestinationConfig::ImmediateAddress(destination, self.consume_immediate()?)
-            }
-        };
+        let config =
+            self.parse_target(destination_selector, source_selector, destination, source)?;
 
-        Ok(constructor(field))
+        Ok(constructor(config))
     }
     fn parse_next_instruction(&mut self) -> Result<Instruction, String> {
         let next: NamedInstruction = self.current_byte()?.try_into()?;
@@ -421,40 +414,129 @@ impl<const MEMORY_BYTE_SIZE: usize, const HALT_MS: u64> Vm<MEMORY_BYTE_SIZE, HAL
             bytes.try_into().expect("grabbed 4 bytes"),
         ))
     }
-    fn run_mov(&mut self, config: Config) -> Result<(), String> {
+    fn run_action_with_config<Action: FnOnce(Word, Word) -> Word>(
+        &mut self,
+        config: Config,
+        action: Action,
+    ) -> Result<(), String> {
         match config {
             Config::RegisterFromRegister(destination, source) => {
-                self.set_register_value(&destination, self.register_value(&source))
+                let destination_value = self.register_value(&destination);
+                let source_value = self.register_value(&source);
+                self.set_register_value(&destination, action(destination_value, source_value))
             }
             Config::RegisterFromImmediate(destination, source) => {
-                self.set_register_value(&destination, source)
+                let destination_value = self.register_value(&destination);
+                let source_value = source;
+                self.set_register_value(&destination, action(destination_value, source_value))
             }
-            Config::RegisterFromRegisterAddress(destination, source) => self.set_register_value(
-                &destination,
-                self.memory_value(&self.register_value(&source))?,
-            ),
+            Config::RegisterFromRegisterAddress(destination, source) => {
+                let destination_value = self.register_value(&destination);
+                let source_value = self.memory_value(&self.register_value(&source))?;
+                self.set_register_value(&destination, action(destination_value, source_value))
+            }
             Config::RegisterFromImmediateAddress(destination, source) => {
-                self.set_register_value(&destination, self.memory_value(&source)?)
+                let destination_value = self.register_value(&destination);
+                let source_value = self.memory_value(&source)?;
+                self.set_register_value(&destination, action(destination_value, source_value))
             }
-            Config::RegisterAddressFromRegister(destination, source) => self.set_memory_value(
-                &self.register_value(&destination),
-                self.register_value(&source),
-            )?,
+            Config::RegisterAddressFromRegister(destination, source) => {
+                let destination = self.register_value(&destination);
+                let destination_value = self.memory_value(&destination)?;
+                let source_value = self.register_value(&source);
+                self.set_memory_value(&destination, action(destination_value, source_value))?
+            }
             Config::RegisterAddressFromImmediate(destination, source) => {
-                self.set_memory_value(&self.register_value(&destination), source)?
+                let destination = self.register_value(&destination);
+                let destination_value = self.memory_value(&destination)?;
+                let source_value = source;
+                self.set_memory_value(&destination, action(destination_value, source_value))?
             }
             Config::ImmediateAddressFromRegister(destination, source) => {
-                self.set_memory_value(&destination, self.register_value(&source))?
+                let destination_value = self.memory_value(&destination)?;
+                let source_value = self.register_value(&source);
+                self.set_memory_value(&destination, action(destination_value, source_value))?
             }
             Config::ImmediateAddressFromImmediate(destination, source) => {
-                self.set_memory_value(&destination, source)?
+                let destination_value = self.memory_value(&destination)?;
+                let source_value = source;
+                self.set_memory_value(&destination, action(destination_value, source_value))?
             }
-        }
+        };
         Ok(())
+    }
+    fn run_mov(&mut self, config: Config) -> Result<(), String> {
+        self.run_action_with_config(config, |_destination, source| source)
     }
     fn run_not(&mut self, config: Register) {
         self.set_register_value(&config, !self.register_value(&config))
     }
+    fn run_cmp(&mut self, config: Config) -> Result<(), String> {
+        let flags = self.register_value(&Register::Flag);
+        let compare = match (Flag::Equal.is_active(flags), Flag::Less.is_active(flags)) {
+            (true, true) => PartialOrd::<Word>::le,
+            (true, false) => PartialEq::<Word>::eq,
+            (false, true) => PartialOrd::<Word>::lt,
+            (false, false) => PartialEq::<Word>::ne,
+        };
+        self.run_action_with_config(config, |destination, source| {
+            compare(&destination, &source).into()
+        })
+    }
+    fn run_add(&mut self, config: Config) -> Result<(), String> {
+        let flags = self.register_value(&Register::Flag);
+        let carry_bit: Word = Flag::CarryOrBorrow.is_active(flags).into();
+
+        /* borrow checker hack :S */
+        let mut set_carry_bit = None;
+
+        self.run_action_with_config(config, |destination, source| {
+            let result = destination.checked_add(source + carry_bit);
+            if let Some(destination_value) = result {
+                set_carry_bit = Some(false);
+                destination_value
+            } else {
+                set_carry_bit = Some(true);
+                0
+            }
+        })?;
+
+        let flag_value = if let Some(result) = set_carry_bit {
+            if result {
+                flags & !0b10
+            } else {
+                flags | 0b10
+            }
+        } else {
+            unreachable!("given closure should always run")
+        };
+
+        self.set_register_value(&Register::Flag, flag_value);
+        Ok(())
+    }
+    fn run_jnz(&mut self, config: Config) -> Result<(), String> {
+        let mut destination_value = None;
+        self.run_action_with_config(config, |destination, source| {
+            if source != 0 {
+                destination_value = Some(destination);
+            } else {
+                destination_value = Some(0);
+            }
+            destination
+        })?;
+        if let Some(offset) = destination_value {
+            self.set_register_value(
+                &Register::ProgramCounter,
+                self.register_value(&Register::ProgramCounter)
+                    .wrapping_add_signed(offset as i32),
+            );
+        } else {
+            unreachable!("given closure should always run")
+        }
+
+        Ok(())
+    }
+
     pub fn run_next_instruction(&mut self) -> Result<(), String> {
         let instruction = self.parse_next_instruction()?;
         match instruction {
@@ -467,17 +549,17 @@ impl<const MEMORY_BYTE_SIZE: usize, const HALT_MS: u64> Vm<MEMORY_BYTE_SIZE, HAL
             Instruction::Xor(_) => todo!(),
             Instruction::Shl(_) => todo!(),
             Instruction::Shr(_) => todo!(),
-            Instruction::Add(_) => todo!(),
+            Instruction::Add(config) => self.run_add(config)?,
             Instruction::Sub(_) => todo!(),
             Instruction::Mul(_) => todo!(),
             Instruction::IMul(_) => todo!(),
             Instruction::Div(_) => todo!(),
             Instruction::IDiv(_) => todo!(),
             Instruction::Rem(_) => todo!(),
-            Instruction::Cmp(_) => todo!(),
-            Instruction::Jmp(_) => todo!(),
+            Instruction::Cmp(config) => self.run_cmp(config)?,
+            Instruction::Jmp(_, _) => todo!(),
             Instruction::Jz(_) => todo!(),
-            Instruction::Jnz(_) => todo!(),
+            Instruction::Jnz(config) => self.run_jnz(config)?,
             Instruction::Jeq(_) => todo!(),
             Instruction::Jne(_) => todo!(),
             Instruction::Jge(_) => todo!(),
