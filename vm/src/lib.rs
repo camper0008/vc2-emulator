@@ -1,3 +1,4 @@
-pub mod arch;
+mod arch;
 mod named_instruction;
-pub mod vm;
+mod vm;
+pub use vm::*;

@@ -1,0 +1,15 @@
+commands:
+- help
+    show this menu
+- inline <byte*>
+    start a new vm with a list of comma-seperated bytes as instructions
+- file <bin>
+    start a new vm with the file bytes as instructions
+- registers [hex|binary|decimal]
+    view registers in [hex|binary|decimal]
+- memory [hex|binary|decimal] [start] [stop]
+    show memory bytes from [start] to [stop] in [hex|binary|decimal]
+- step
+    steps once
+- eval
+    steps through the entire process
