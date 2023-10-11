@@ -1,5 +1,5 @@
 [package]
-name = "vc2-emulator"
+name = "vc2-vm"
 version = "0.1.0"
 edition = "2021"
 
