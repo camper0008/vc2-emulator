@@ -117,19 +117,36 @@ pub enum Instruction {
     IDiv(Config),
     Rem(Config),
     Cmp(Config),
-    Jmp(bool, JmpConfig),
+    Jmp(JmpConfig, JmpVariant),
     Jz(Config),
     Jnz(Config),
-    Jeq(Config),
-    Jne(Config),
-    Jge(Config),
-    Jgt(Config),
-    Jle(Config),
-    Jlt(Config),
+}
+
+pub enum MathOpVariant {
+    Or,
+    And,
+    Xor,
+    Shl,
+    Shr,
+    Mul,
+    IMul,
+    Div,
+    IDiv,
+    Rem,
 }
 
 pub fn invalid_architecture_message<E>(_error: E) -> String {
     String::from("architecture should support 32 bit word pointers")
+}
+
+pub enum JmpVariant {
+    Absolute,
+    Relative,
+}
+
+pub enum ConditionalJmpVariant {
+    Jz,
+    Jnz,
 }
 
 impl<const MEMORY_BYTE_SIZE: usize, const HALT_MS: u64> Vm<MEMORY_BYTE_SIZE, HALT_MS> {
@@ -260,6 +277,11 @@ impl<const MEMORY_BYTE_SIZE: usize, const HALT_MS: u64> Vm<MEMORY_BYTE_SIZE, HAL
         let selector = ((input & 0b1100_0000) >> 6).try_into()?;
         let destination = ((input & 0b0000_1100) >> 2).try_into();
         let is_absolute = (input & 0b0000_0001) != 0;
+        let variant = if is_absolute {
+            JmpVariant::Absolute
+        } else {
+            JmpVariant::Relative
+        };
 
         let config = match selector {
             Selector::Register => JmpConfig::Register(destination?),
@@ -268,7 +290,7 @@ impl<const MEMORY_BYTE_SIZE: usize, const HALT_MS: u64> Vm<MEMORY_BYTE_SIZE, HAL
             Selector::ImmediateAddress => JmpConfig::ImmediateAddress(self.consume_immediate()?),
         };
 
-        Ok(Instruction::Jmp(is_absolute, config))
+        Ok(Instruction::Jmp(config, variant))
     }
 
     fn parse_conditional_jmp(&mut self) -> Result<Instruction, String> {
@@ -277,12 +299,6 @@ impl<const MEMORY_BYTE_SIZE: usize, const HALT_MS: u64> Vm<MEMORY_BYTE_SIZE, HAL
         let constructor = match instruction {
             named_instruction::Jz => Instruction::Jz,
             named_instruction::Jnz => Instruction::Jnz,
-            named_instruction::Jeq => Instruction::Jeq,
-            named_instruction::Jne => Instruction::Jne,
-            named_instruction::Jge => Instruction::Jge,
-            named_instruction::Jgt => Instruction::Jgt,
-            named_instruction::Jle => Instruction::Jle,
-            named_instruction::Jlt => Instruction::Jlt,
             field => Err(format!("invalid instruction {field:?}"))?,
         };
 
@@ -360,19 +376,9 @@ impl<const MEMORY_BYTE_SIZE: usize, const HALT_MS: u64> Vm<MEMORY_BYTE_SIZE, HAL
             | named_instruction::IDiv
             | named_instruction::Rem
             | named_instruction::Cmp => self.parse_math_op(),
-
             named_instruction::Not => self.parse_not(),
-
             named_instruction::Jmp => self.parse_jmp(),
-
-            named_instruction::Jz
-            | named_instruction::Jnz
-            | named_instruction::Jeq
-            | named_instruction::Jne
-            | named_instruction::Jge
-            | named_instruction::Jgt
-            | named_instruction::Jle
-            | named_instruction::Jlt => self.parse_conditional_jmp(),
+            named_instruction::Jz | named_instruction::Jnz => self.parse_conditional_jmp(),
         }
     }
     fn register_value(&self, register: &Register) -> Word {
@@ -483,11 +489,41 @@ impl<const MEMORY_BYTE_SIZE: usize, const HALT_MS: u64> Vm<MEMORY_BYTE_SIZE, HAL
             compare(&destination, &source).into()
         })
     }
+    fn run_sub(&mut self, config: Config) -> Result<(), String> {
+        let flags = self.register_value(&Register::Flag);
+        let carry_bit: Word = Flag::CarryOrBorrow.is_active(flags).into();
+
+        let mut set_carry_bit = None;
+
+        self.run_action_with_config(config, |destination, source| {
+            let result = destination.checked_sub(source + carry_bit);
+            if let Some(destination_value) = result {
+                set_carry_bit = Some(false);
+                destination_value
+            } else {
+                set_carry_bit = Some(true);
+                0
+            }
+        })?;
+
+        let flag_value = if let Some(result) = set_carry_bit {
+            if result {
+                flags & !0b10
+            } else {
+                flags | 0b10
+            }
+        } else {
+            unreachable!("given closure should always run")
+        };
+
+        self.set_register_value(&Register::Flag, flag_value);
+        Ok(())
+    }
+
     fn run_add(&mut self, config: Config) -> Result<(), String> {
         let flags = self.register_value(&Register::Flag);
         let carry_bit: Word = Flag::CarryOrBorrow.is_active(flags).into();
 
-        /* borrow checker hack :S */
         let mut set_carry_bit = None;
 
         self.run_action_with_config(config, |destination, source| {
@@ -514,10 +550,18 @@ impl<const MEMORY_BYTE_SIZE: usize, const HALT_MS: u64> Vm<MEMORY_BYTE_SIZE, HAL
         self.set_register_value(&Register::Flag, flag_value);
         Ok(())
     }
-    fn run_jnz(&mut self, config: Config) -> Result<(), String> {
+    fn run_conditional_jmp(
+        &mut self,
+        config: Config,
+        variant: ConditionalJmpVariant,
+    ) -> Result<(), String> {
         let mut destination_value = None;
         self.run_action_with_config(config, |destination, source| {
-            if source != 0 {
+            let should_jmp = match variant {
+                ConditionalJmpVariant::Jz => source == 0,
+                ConditionalJmpVariant::Jnz => source != 0,
+            };
+            if should_jmp {
                 destination_value = Some(destination);
             } else {
                 destination_value = Some(0);
@@ -537,6 +581,51 @@ impl<const MEMORY_BYTE_SIZE: usize, const HALT_MS: u64> Vm<MEMORY_BYTE_SIZE, HAL
         Ok(())
     }
 
+    fn run_jmp(&mut self, config: JmpConfig, variant: JmpVariant) -> Result<(), String> {
+        let destination = match config {
+            JmpConfig::Register(register) => self.register_value(&register),
+            JmpConfig::Immediate(immediate) => immediate,
+            JmpConfig::RegisterAddress(register) => {
+                self.memory_value(&self.register_value(&register))?
+            }
+            JmpConfig::ImmediateAddress(immediate) => self.memory_value(&immediate)?,
+        };
+
+        match variant {
+            JmpVariant::Absolute => self.set_register_value(&Register::ProgramCounter, destination),
+            JmpVariant::Relative => self.set_register_value(
+                &Register::ProgramCounter,
+                self.register_value(&Register::ProgramCounter)
+                    .wrapping_add_signed(destination as i32),
+            ),
+        };
+
+        Ok(())
+    }
+
+    fn run_generic_math_op(
+        &mut self,
+        config: Config,
+        variant: MathOpVariant,
+    ) -> Result<(), String> {
+        let action: fn(u32, u32) -> u32 = match variant {
+            MathOpVariant::Or => std::ops::BitOr::bitor,
+            MathOpVariant::And => std::ops::BitAnd::bitand,
+            MathOpVariant::Xor => std::ops::BitXor::bitxor,
+            MathOpVariant::Shl => std::ops::Shl::shl,
+            MathOpVariant::Shr => std::ops::Shr::shr,
+            MathOpVariant::Mul => std::ops::Mul::mul,
+            MathOpVariant::IMul => |value, rhs| ((value as i32) * (rhs as i32)) as u32,
+            MathOpVariant::Div => std::ops::Div::div,
+            MathOpVariant::IDiv => |value, rhs| ((value as i32) / (rhs as i32)) as u32,
+            MathOpVariant::Rem => std::ops::Rem::rem,
+        };
+
+        self.run_action_with_config(config, action)?;
+
+        Ok(())
+    }
+
     pub fn run_next_instruction(&mut self) -> Result<(), String> {
         let instruction = self.parse_next_instruction()?;
         match instruction {
@@ -544,28 +633,26 @@ impl<const MEMORY_BYTE_SIZE: usize, const HALT_MS: u64> Vm<MEMORY_BYTE_SIZE, HAL
             Instruction::Htl => std::thread::sleep(Duration::from_millis(HALT_MS)),
             Instruction::Mov(config) => self.run_mov(config)?,
             Instruction::Not(config) => self.run_not(config),
-            Instruction::Or(_) => todo!(),
-            Instruction::And(_) => todo!(),
-            Instruction::Xor(_) => todo!(),
-            Instruction::Shl(_) => todo!(),
-            Instruction::Shr(_) => todo!(),
+            Instruction::Or(config) => self.run_generic_math_op(config, MathOpVariant::Or)?,
+            Instruction::And(config) => self.run_generic_math_op(config, MathOpVariant::And)?,
+            Instruction::Xor(config) => self.run_generic_math_op(config, MathOpVariant::Xor)?,
+            Instruction::Shl(config) => self.run_generic_math_op(config, MathOpVariant::Shl)?,
+            Instruction::Shr(config) => self.run_generic_math_op(config, MathOpVariant::Shr)?,
             Instruction::Add(config) => self.run_add(config)?,
-            Instruction::Sub(_) => todo!(),
-            Instruction::Mul(_) => todo!(),
-            Instruction::IMul(_) => todo!(),
-            Instruction::Div(_) => todo!(),
-            Instruction::IDiv(_) => todo!(),
-            Instruction::Rem(_) => todo!(),
+            Instruction::Sub(config) => self.run_sub(config)?,
+            Instruction::Mul(config) => self.run_generic_math_op(config, MathOpVariant::Mul)?,
+            Instruction::IMul(config) => self.run_generic_math_op(config, MathOpVariant::IMul)?,
+            Instruction::Div(config) => self.run_generic_math_op(config, MathOpVariant::Div)?,
+            Instruction::IDiv(config) => self.run_generic_math_op(config, MathOpVariant::IDiv)?,
+            Instruction::Rem(config) => self.run_generic_math_op(config, MathOpVariant::Rem)?,
             Instruction::Cmp(config) => self.run_cmp(config)?,
-            Instruction::Jmp(_, _) => todo!(),
-            Instruction::Jz(_) => todo!(),
-            Instruction::Jnz(config) => self.run_jnz(config)?,
-            Instruction::Jeq(_) => todo!(),
-            Instruction::Jne(_) => todo!(),
-            Instruction::Jge(_) => todo!(),
-            Instruction::Jgt(_) => todo!(),
-            Instruction::Jle(_) => todo!(),
-            Instruction::Jlt(_) => todo!(),
+            Instruction::Jmp(config, variant) => self.run_jmp(config, variant)?,
+            Instruction::Jz(config) => {
+                self.run_conditional_jmp(config, ConditionalJmpVariant::Jz)?
+            }
+            Instruction::Jnz(config) => {
+                self.run_conditional_jmp(config, ConditionalJmpVariant::Jnz)?
+            }
         }
         Ok(())
     }

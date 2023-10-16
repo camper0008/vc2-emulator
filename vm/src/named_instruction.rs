@@ -20,12 +20,6 @@ pub enum NamedInstruction {
     Jmp,
     Jz,
     Jnz,
-    Jeq,
-    Jne,
-    Jlt,
-    Jle,
-    Jgt,
-    Jge,
 }
 
 pub use NamedInstruction::*;
@@ -55,12 +49,6 @@ impl TryFrom<u8> for NamedInstruction {
             0x11 => Ok(NamedInstruction::Jmp),
             0x12 => Ok(NamedInstruction::Jz),
             0x13 => Ok(NamedInstruction::Jnz),
-            0x14 => Ok(NamedInstruction::Jeq),
-            0x15 => Ok(NamedInstruction::Jne),
-            0x16 => Ok(NamedInstruction::Jlt),
-            0x17 => Ok(NamedInstruction::Jle),
-            0x18 => Ok(NamedInstruction::Jgt),
-            0x19 => Ok(NamedInstruction::Jge),
             instruction => Err(format!("unrecognized instruction '0x{instruction:X}'")),
         }
     }
