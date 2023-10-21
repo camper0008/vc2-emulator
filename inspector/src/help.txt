@@ -1,9 +1,9 @@
 commands:
 - help
     show this menu
-- inline <byte*>
-    start a new vm with a list of comma-seperated bytes as instructions
-- file <bin>
+- inline [hex|binary|decimal] <byte*>
+    start a new vm with a list of whitespace-seperated bytes as instructions
+- file <path>
     start a new vm with the file bytes as instructions
 - registers [hex|binary|decimal]
     view registers in [hex|binary|decimal]
