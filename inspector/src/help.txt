@@ -1,3 +1,6 @@
+syntax:
+cmd = <cmd_0> <input_0> (&& <cmd_n> <input_n>)*
+
 commands:
 - help
     show this menu
@@ -7,11 +10,13 @@ commands:
     start a new vm with a list of whitespace-seperated bytes as instructions
 - load|file <path>
     start a new vm with the contents of '<path>' as instructions
-- (unimpl) registers [hex|binary|decimal]
+- registers [hex|binary|decimal]
     view registers in [hex|binary|decimal]
+- repeat [n] <cmd>
+    repeat `cmd` [n] times
 - (unimpl) memory [hex|binary|decimal] [start] [stop]
     show memory bytes from [start] to [stop] in [hex|binary|decimal]
-- step
-    steps once
+- step [n]?
+    steps [n] times, default 1
 - eval
     steps through the entire process
