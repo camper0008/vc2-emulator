@@ -158,7 +158,6 @@ pub enum ConditionalJmpVariant {
 
 impl<const MEMORY_BYTE_SIZE: usize, const HALT_MS: u64> Vm<MEMORY_BYTE_SIZE, HALT_MS> {
     pub fn new(instructions: Vec<u8>) -> Self {
-        log::debug!("parsing instructions {instructions:#02x?}");
         let mut memory = [0; MEMORY_BYTE_SIZE];
         instructions
             .into_iter()
@@ -178,8 +177,16 @@ impl<const MEMORY_BYTE_SIZE: usize, const HALT_MS: u64> Vm<MEMORY_BYTE_SIZE, HAL
         self.registers
             .program_counter
             .try_into()
-            .map(|idx: usize| self.memory[idx])
             .map_err(invalid_architecture_message)
+            .map(|idx: usize| {
+                self.memory.get(idx).ok_or_else(|| {
+                    format!(
+                        "cannot get current byte: index {idx} > {}",
+                        self.memory.len()
+                    )
+                })
+            })?
+            .copied()
     }
     fn step(&mut self) {
         self.registers.program_counter += 1;
@@ -417,23 +424,35 @@ impl<const MEMORY_BYTE_SIZE: usize, const HALT_MS: u64> Vm<MEMORY_BYTE_SIZE, HAL
             .try_into()
             .map_err(invalid_architecture_message)?;
 
-        value
-            .to_be_bytes()
-            .into_iter()
-            .enumerate()
-            .for_each(|(offset, value)| self.memory[address + offset] = value);
-
-        Ok(())
+        value.to_be_bytes().into_iter().enumerate().try_for_each(
+            |(offset, value)| -> Result<(), String> {
+                let len = self.memory.len();
+                let reference = self.memory.get_mut(address + offset).ok_or_else(|| {
+                    format!(
+                        "cannot get current byte: index {} > {len}",
+                        address + offset,
+                    )
+                })?;
+                *reference = value;
+                Ok(())
+            },
+        )
     }
     fn memory_value(&self, address: &Word) -> Result<Word, String> {
         let address: usize = (address * 4)
             .try_into()
             .map_err(invalid_architecture_message)?;
 
-        let bytes = &self.memory[address..address + 4];
-        Ok(u32::from_be_bytes(
-            bytes.try_into().expect("grabbed 4 bytes"),
-        ))
+        self.memory
+            .get(address..address + 4)
+            .ok_or_else(|| {
+                format!(
+                    "cannot get memory word: index {} > {}",
+                    address + 4,
+                    self.memory.len()
+                )
+            })
+            .map(|bytes| u32::from_be_bytes(bytes.try_into().expect("grabbed 4 bytes")))
     }
     fn run_action_with_config<Action: FnOnce(Word, Word) -> Word>(
         &mut self,
@@ -502,16 +521,22 @@ impl<const MEMORY_BYTE_SIZE: usize, const HALT_MS: u64> Vm<MEMORY_BYTE_SIZE, HAL
         self.set_register_value(&config, !self.register_value(&config))
     }
     fn run_cmp(&mut self, config: Config) -> Result<(), String> {
-        let flags = self.register_value(&Register::Flag);
-        let compare = match (Flag::Equal.is_active(flags), Flag::Less.is_active(flags)) {
-            (true, true) => PartialOrd::<Word>::le,
-            (true, false) => PartialEq::<Word>::eq,
-            (false, true) => PartialOrd::<Word>::lt,
-            (false, false) => PartialEq::<Word>::ne,
-        };
+        let mut new_flag_value = None;
+
         self.run_action_with_config(config, |destination, source| {
-            compare(&destination, &source).into()
-        })
+            let flag_value = if destination == source { 0x4 } else { 0x0 };
+            let flag_value = flag_value | if destination < source { 0x8 } else { 0x0 };
+            new_flag_value = Some(flag_value);
+            destination
+        })?;
+
+        let Some(flag_value) = new_flag_value else {
+            unreachable!("given closure should always run")
+        };
+
+        self.set_register_value(&Register::Flag, flag_value);
+
+        Ok(())
     }
     fn run_sub(&mut self, config: Config) -> Result<(), String> {
         let flags = self.register_value(&Register::Flag);
