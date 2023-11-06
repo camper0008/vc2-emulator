@@ -37,6 +37,7 @@ impl Flag {
     }
 }
 
+#[derive(Debug)]
 pub enum Register {
     GeneralPurpose0,
     GeneralPurpose1,
@@ -81,6 +82,7 @@ impl TryFrom<u8> for Selector {
     }
 }
 
+#[derive(Debug)]
 pub enum Config {
     RegisterFromRegister(Register, Register),
     RegisterFromImmediate(Register, Immediate),
@@ -90,8 +92,11 @@ pub enum Config {
     RegisterAddressFromImmediate(Register, Immediate),
     ImmediateAddressFromRegister(Immediate, Register),
     ImmediateAddressFromImmediate(Immediate, Immediate),
+    ImmediateFromImmediate(Immediate, Immediate),
+    ImmediateFromRegister(Immediate, Register),
 }
 
+#[derive(Debug)]
 pub enum JmpConfig {
     Register(Register),
     Immediate(Immediate),
@@ -99,6 +104,7 @@ pub enum JmpConfig {
     ImmediateAddress(Immediate),
 }
 
+#[derive(Debug)]
 pub enum Instruction {
     Nop,
     Htl,
@@ -139,6 +145,7 @@ pub fn invalid_architecture_message<E>(_error: E) -> String {
     String::from("architecture should support 32 bit word pointers")
 }
 
+#[derive(Debug)]
 pub enum JmpVariant {
     Absolute,
     Relative,
@@ -151,6 +158,7 @@ pub enum ConditionalJmpVariant {
 
 impl<const MEMORY_BYTE_SIZE: usize, const HALT_MS: u64> Vm<MEMORY_BYTE_SIZE, HALT_MS> {
     pub fn new(instructions: Vec<u8>) -> Self {
+        log::debug!("parsing instructions {instructions:#02x?}");
         let mut memory = [0; MEMORY_BYTE_SIZE];
         instructions
             .into_iter()
@@ -164,11 +172,6 @@ impl<const MEMORY_BYTE_SIZE: usize, const HALT_MS: u64> Vm<MEMORY_BYTE_SIZE, HAL
                 flag: 0,
                 program_counter: 0,
             },
-        }
-    }
-    pub fn run(mut self) -> Result<(), String> {
-        loop {
-            self.run_next_instruction()?;
         }
     }
     fn current_byte(&self) -> Result<u8, String> {
@@ -215,6 +218,12 @@ impl<const MEMORY_BYTE_SIZE: usize, const HALT_MS: u64> Vm<MEMORY_BYTE_SIZE, HAL
                     self.consume_immediate()?,
                     self.consume_immediate()?,
                 )
+            }
+            (Selector::Immediate, Selector::Immediate) => {
+                Config::ImmediateFromImmediate(self.consume_immediate()?, self.consume_immediate()?)
+            }
+            (Selector::Immediate, Selector::Register) => {
+                Config::ImmediateFromRegister(self.consume_immediate()?, source?)
             }
             variant => Err(format!(
                 "invalid selector/destination combo '{variant:?}' at {}",
@@ -274,6 +283,8 @@ impl<const MEMORY_BYTE_SIZE: usize, const HALT_MS: u64> Vm<MEMORY_BYTE_SIZE, HAL
         let input = self.current_byte()?;
         self.step();
 
+        log::debug!("parsing input '{input:#08b}'");
+
         let selector = ((input & 0b1100_0000) >> 6).try_into()?;
         let destination = ((input & 0b0000_1100) >> 2).try_into();
         let is_absolute = (input & 0b0000_0001) != 0;
@@ -304,6 +315,8 @@ impl<const MEMORY_BYTE_SIZE: usize, const HALT_MS: u64> Vm<MEMORY_BYTE_SIZE, HAL
 
         let input = self.current_byte()?;
         self.step();
+
+        log::debug!("parsing target ({input:#08b})");
 
         let destination_selector: Selector = ((input & 0b1100_0000) >> 6).try_into()?;
         let source_selector: Selector = ((input & 0b0011_0000) >> 4).try_into()?;
@@ -357,7 +370,9 @@ impl<const MEMORY_BYTE_SIZE: usize, const HALT_MS: u64> Vm<MEMORY_BYTE_SIZE, HAL
         Ok(constructor(config))
     }
     fn parse_next_instruction(&mut self) -> Result<Instruction, String> {
-        let next: NamedInstruction = self.current_byte()?.try_into()?;
+        let current_byte = self.current_byte()?;
+        let next: NamedInstruction = current_byte.try_into()?;
+        log::debug!("parsing instruction {next:?} ({current_byte:#02X})");
         match next {
             named_instruction::Nop => self.parse_nop(),
             named_instruction::Hlt => self.parse_htl(),
@@ -392,9 +407,9 @@ impl<const MEMORY_BYTE_SIZE: usize, const HALT_MS: u64> Vm<MEMORY_BYTE_SIZE, HAL
     fn set_register_value(&mut self, register: &Register, value: Word) {
         match register {
             Register::GeneralPurpose0 => self.registers.general_purpose_0 = value,
-            Register::GeneralPurpose1 => self.registers.general_purpose_0 = value,
-            Register::Flag => self.registers.general_purpose_0 = value,
-            Register::ProgramCounter => self.registers.general_purpose_0 = value,
+            Register::GeneralPurpose1 => self.registers.general_purpose_1 = value,
+            Register::Flag => self.registers.flag = value,
+            Register::ProgramCounter => self.registers.program_counter = value,
         }
     }
     fn set_memory_value(&mut self, address: &Word, value: Word) -> Result<(), String> {
@@ -425,6 +440,7 @@ impl<const MEMORY_BYTE_SIZE: usize, const HALT_MS: u64> Vm<MEMORY_BYTE_SIZE, HAL
         config: Config,
         action: Action,
     ) -> Result<(), String> {
+        log::debug!("running action with config '{config:?}'");
         match config {
             Config::RegisterFromRegister(destination, source) => {
                 let destination_value = self.register_value(&destination);
@@ -467,6 +483,14 @@ impl<const MEMORY_BYTE_SIZE: usize, const HALT_MS: u64> Vm<MEMORY_BYTE_SIZE, HAL
                 let destination_value = self.memory_value(&destination)?;
                 let source_value = source;
                 self.set_memory_value(&destination, action(destination_value, source_value))?
+            }
+            Config::ImmediateFromImmediate(destination, source) => {
+                action(destination, source);
+            }
+            Config::ImmediateFromRegister(destination, source) => {
+                let destination_value = destination;
+                let source_value = self.register_value(&source);
+                action(destination_value, source_value);
             }
         };
         Ok(())
@@ -600,6 +624,11 @@ impl<const MEMORY_BYTE_SIZE: usize, const HALT_MS: u64> Vm<MEMORY_BYTE_SIZE, HAL
             ),
         };
 
+        log::debug!(
+            "jmp: pc={:#04X} dest={destination:#04X}",
+            self.register_value(&Register::ProgramCounter),
+        );
+
         Ok(())
     }
 
@@ -627,7 +656,12 @@ impl<const MEMORY_BYTE_SIZE: usize, const HALT_MS: u64> Vm<MEMORY_BYTE_SIZE, HAL
     }
 
     pub fn run_next_instruction(&mut self) -> Result<(), String> {
+        if self.register_value(&Register::ProgramCounter) as usize >= MEMORY_BYTE_SIZE {
+            return Err(String::from("out of instructions"));
+        }
+        let current_location = self.register_value(&Register::ProgramCounter);
         let instruction = self.parse_next_instruction()?;
+        log::debug!("running instruction {instruction:?} at {current_location:#04X}",);
         match instruction {
             Instruction::Nop => (),
             Instruction::Htl => std::thread::sleep(Duration::from_millis(HALT_MS)),
