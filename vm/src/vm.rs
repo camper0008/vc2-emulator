@@ -396,7 +396,7 @@ impl<const MEMORY_BYTE_SIZE: usize, const HALT_MS: u64> Vm<MEMORY_BYTE_SIZE, HAL
             named_instruction::Jz | named_instruction::Jnz => self.parse_conditional_jmp(),
         }
     }
-    fn register_value(&self, register: &Register) -> Word {
+    pub fn register_value(&self, register: &Register) -> Word {
         match register {
             Register::GeneralPurpose0 => self.registers.general_purpose_0,
             Register::GeneralPurpose1 => self.registers.general_purpose_1,

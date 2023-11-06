@@ -11,6 +11,20 @@ fn vm_from_file(file_name: &str) -> io::Result<Vm<VM_MEMORY_BYTES, VM_HALT_MS>> 
     Ok(Vm::new(instructions))
 }
 
+enum WordFormat {
+    Hex,
+    Binary,
+    Decimal,
+}
+
+fn format_word(word: u32, format: &WordFormat) -> String {
+    match format {
+        WordFormat::Hex => format!("{word:#010X}"),
+        WordFormat::Binary => format!("{word:#34b}"),
+        WordFormat::Decimal => format!("{word:#}"),
+    }
+}
+
 fn main() -> Result<(), io::Error> {
     println!("[#] vc2-inspector started");
     let help_menu = include_str!("help.txt");
@@ -35,8 +49,7 @@ fn main() -> Result<(), io::Error> {
             None => continue,
             Some("help") => println!("{help_menu}"),
             Some("file" | "load") => {
-                let file_name = buffer.next();
-                let Some(file_name) = file_name else {
+                let Some(file_name) = buffer.next() else {
                     println!("missing file name after `file` command");
                     continue;
                 };
@@ -68,6 +81,41 @@ fn main() -> Result<(), io::Error> {
                         break 'eval_loop;
                     }
                 }
+            }
+            Some("registers") => {
+                use vc2_vm::Register::*;
+                let Some(ref vm) = vm else {
+                    println!("vm not started, try `help`");
+                    continue;
+                };
+                let format = match buffer.next() {
+                    Some("hex") => WordFormat::Hex,
+                    Some("binary") => WordFormat::Binary,
+                    Some("decimal") => WordFormat::Decimal,
+                    Some(format) => {
+                        println!("unrecognized format '{format}'");
+                        continue;
+                    }
+                    None => {
+                        println!("missing format after `registers` command");
+                        continue;
+                    }
+                };
+
+                println!("[#] registers:");
+                println!(
+                    "- r0: {}",
+                    format_word(vm.register_value(&GeneralPurpose0), &format)
+                );
+                println!(
+                    "- r1: {}",
+                    format_word(vm.register_value(&GeneralPurpose1), &format)
+                );
+                println!("- fl: {}", format_word(vm.register_value(&Flag), &format));
+                println!(
+                    "- pc: {}",
+                    format_word(vm.register_value(&ProgramCounter), &format)
+                );
             }
             Some("exit") => {
                 break Ok(());
