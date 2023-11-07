@@ -31,9 +31,9 @@ enum CmdResult {
     Exit,
 }
 
-fn execute_cmd<'a>(
+fn execute_cmd(
     vm: &mut Option<Vm<VM_MEMORY_BYTES, VM_HALT_MS>>,
-    buffer: &mut dyn Iterator<Item = &'a str>,
+    buffer: &mut dyn Iterator<Item = &str>,
 ) -> CmdResult {
     let help_menu = include_str!("help.txt");
 
@@ -172,7 +172,7 @@ fn main() -> Result<(), io::Error> {
         let stdin = io::stdin();
         stdin.read_line(&mut buffer)?;
 
-        let mut buffer = buffer.split(" ").map(|v| v.trim());
+        let mut buffer = buffer.split(' ').map(|v| v.trim());
         if execute_cmd(&mut vm, &mut buffer) == CmdResult::Exit {
             break Ok(());
         };
