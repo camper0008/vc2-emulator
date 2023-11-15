@@ -82,8 +82,10 @@ fn execute_cmd(
                    return CmdResult::Continue;
                 };
 
+            let buffer = buffer.collect::<Vec<_>>();
             for _ in 0..amount {
-                let result = execute_cmd(vm, buffer);
+                let mut buffer = buffer.clone().into_iter();
+                let result = execute_cmd(vm, &mut buffer);
                 if CmdResult::Exit == result {
                     return CmdResult::Exit;
                 }
