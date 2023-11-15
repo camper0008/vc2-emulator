@@ -31,6 +31,22 @@ enum CmdResult {
     Exit,
 }
 
+fn word_format(cmd: &str, word: Option<&str>) -> Option<WordFormat> {
+    match word {
+        Some("hex") => Some(WordFormat::Hex),
+        Some("bin" | "binary") => Some(WordFormat::Binary),
+        Some("dec" | "decimal") => Some(WordFormat::Decimal),
+        Some(format) => {
+            println!("unrecognized format '{format}'");
+            None
+        }
+        None => {
+            println!("missing format after `{cmd}` command");
+            None
+        }
+    }
+}
+
 fn execute_cmd(
     vm: &mut Option<Vm<VM_MEMORY_BYTES, VM_HALT_MS>>,
     buffer: &mut dyn Iterator<Item = &str>,
@@ -109,18 +125,8 @@ fn execute_cmd(
                     println!("vm not started, try `help`");
                     return CmdResult::Continue;
                 };
-            let format = match buffer.next() {
-                Some("hex") => WordFormat::Hex,
-                Some("binary") => WordFormat::Binary,
-                Some("decimal") => WordFormat::Decimal,
-                Some(format) => {
-                    println!("unrecognized format '{format}'");
-                    return CmdResult::Continue;
-                }
-                None => {
-                    println!("missing format after `{cmd}` command");
-                    return CmdResult::Continue;
-                }
+            let Some(format) = word_format(cmd, buffer.next()) else {
+                return CmdResult::Continue;
             };
 
             println!("[#] registers:");
@@ -143,19 +149,9 @@ fn execute_cmd(
                     println!("vm not started, try `help`");
                     return CmdResult::Continue;
                 };
-            let format = match buffer.next() {
-                Some("hex") => WordFormat::Hex,
-                Some("binary") => WordFormat::Binary,
-                Some("decimal") => WordFormat::Decimal,
-                Some(format) => {
-                    println!("unrecognized format '{format}'");
+            let Some(format) = word_format(cmd, buffer.next()) else {
                     return CmdResult::Continue;
-                }
-                None => {
-                    println!("missing format after `{cmd}` command");
-                    return CmdResult::Continue;
-                }
-            };
+                };
 
             let start = buffer.next().map(|v| v.parse().ok()).flatten();
             let Some(start) = start else {
