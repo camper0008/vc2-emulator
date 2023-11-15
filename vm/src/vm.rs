@@ -438,7 +438,7 @@ impl<const MEMORY_BYTE_SIZE: usize, const HALT_MS: u64> Vm<MEMORY_BYTE_SIZE, HAL
             },
         )
     }
-    fn memory_value(&self, address: &Word) -> Result<Word, String> {
+    pub fn memory_value(&self, address: &Word) -> Result<Word, String> {
         let address: usize = (address * 4)
             .try_into()
             .map_err(invalid_architecture_message)?;
@@ -586,11 +586,11 @@ impl<const MEMORY_BYTE_SIZE: usize, const HALT_MS: u64> Vm<MEMORY_BYTE_SIZE, HAL
             }
         })?;
 
-        let flag_value = if let Some(result) = set_carry_bit {
-            if result {
-                flags & !0b10
-            } else {
+        let flag_value = if let Some(set_carry_bit) = set_carry_bit {
+            if set_carry_bit {
                 flags | 0b10
+            } else {
+                flags & !0b10
             }
         } else {
             unreachable!("given closure should always run")
