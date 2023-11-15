@@ -55,8 +55,15 @@ fn main() {
         }
         std::process::exit(1);
     }
+    println!("nodes:");
     println!("{ok:#?}");
+    println!();
+    println!("machine code:");
     let assembler = Assembler::new(&ok);
     let out = assembler.assemble();
+    for byte in &out {
+        print!("{byte:#04X} ")
+    }
+    println!();
     fs::write("out.o", out).unwrap();
 }

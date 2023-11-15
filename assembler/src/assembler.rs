@@ -288,7 +288,7 @@ impl<'a> Assembler<'a> {
                     let Some(value) = self.labels.get(label) else {
                         todo!("unrecognized label {label}");
                     };
-                    let value = value - *position as u32;
+                    let value = *value as i32 - *position as i32;
                     for _ in 0..3 {
                         let Some(next) = instructions.next() else {
                             unreachable!("a label reference should always be followed by 3 label paddings")
