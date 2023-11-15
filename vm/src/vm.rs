@@ -603,6 +603,7 @@ impl<const MEMORY_BYTE_SIZE: usize, const HALT_MS: u64> Vm<MEMORY_BYTE_SIZE, HAL
         &mut self,
         config: Config,
         variant: ConditionalJmpVariant,
+        current_location: u32,
     ) -> Result<(), String> {
         let mut destination_value = None;
         self.run_action_with_config(config, |destination, source| {
@@ -620,8 +621,7 @@ impl<const MEMORY_BYTE_SIZE: usize, const HALT_MS: u64> Vm<MEMORY_BYTE_SIZE, HAL
         if let Some(offset) = destination_value {
             self.set_register_value(
                 &Register::ProgramCounter,
-                self.register_value(&Register::ProgramCounter)
-                    .wrapping_add_signed(offset as i32),
+                current_location.wrapping_add_signed(offset as i32),
             );
         } else {
             unreachable!("given closure should always run")
@@ -630,7 +630,12 @@ impl<const MEMORY_BYTE_SIZE: usize, const HALT_MS: u64> Vm<MEMORY_BYTE_SIZE, HAL
         Ok(())
     }
 
-    fn run_jmp(&mut self, config: JmpConfig, variant: JmpVariant) -> Result<(), String> {
+    fn run_jmp(
+        &mut self,
+        config: JmpConfig,
+        variant: JmpVariant,
+        location: u32,
+    ) -> Result<(), String> {
         let destination = match config {
             JmpConfig::Register(register) => self.register_value(&register),
             JmpConfig::Immediate(immediate) => immediate,
@@ -644,8 +649,7 @@ impl<const MEMORY_BYTE_SIZE: usize, const HALT_MS: u64> Vm<MEMORY_BYTE_SIZE, HAL
             JmpVariant::Absolute => self.set_register_value(&Register::ProgramCounter, destination),
             JmpVariant::Relative => self.set_register_value(
                 &Register::ProgramCounter,
-                self.register_value(&Register::ProgramCounter)
-                    .wrapping_add_signed(destination as i32),
+                location.wrapping_add_signed(destination as i32),
             ),
         };
 
@@ -705,12 +709,12 @@ impl<const MEMORY_BYTE_SIZE: usize, const HALT_MS: u64> Vm<MEMORY_BYTE_SIZE, HAL
             Instruction::IDiv(config) => self.run_generic_math_op(config, MathOpVariant::IDiv)?,
             Instruction::Rem(config) => self.run_generic_math_op(config, MathOpVariant::Rem)?,
             Instruction::Cmp(config) => self.run_cmp(config)?,
-            Instruction::Jmp(config, variant) => self.run_jmp(config, variant)?,
+            Instruction::Jmp(config, variant) => self.run_jmp(config, variant, current_location)?,
             Instruction::Jz(config) => {
-                self.run_conditional_jmp(config, ConditionalJmpVariant::Jz)?
+                self.run_conditional_jmp(config, ConditionalJmpVariant::Jz, current_location)?
             }
             Instruction::Jnz(config) => {
-                self.run_conditional_jmp(config, ConditionalJmpVariant::Jnz)?
+                self.run_conditional_jmp(config, ConditionalJmpVariant::Jnz, current_location)?
             }
         }
         Ok(())
