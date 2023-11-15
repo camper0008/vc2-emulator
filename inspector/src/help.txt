@@ -14,7 +14,7 @@ commands:
     view registers in [hex|binary|decimal]
 - repeat [n] <cmd>
     repeat `cmd` [n] times
-- (unimpl) memory [hex|binary|decimal] [start] [stop]
+- memory [hex|binary|decimal] [start] [stop]
     show memory bytes from [start] to [stop] in [hex|binary|decimal]
 - step [n]?
     steps [n] times, default 1

@@ -138,6 +138,47 @@ fn execute_cmd(
                 format_word(vm.register_value(&ProgramCounter), &format)
             );
         }
+        Some(cmd @ "memory") => {
+            let Some(vm) = vm else {
+                    println!("vm not started, try `help`");
+                    return CmdResult::Continue;
+                };
+            let format = match buffer.next() {
+                Some("hex") => WordFormat::Hex,
+                Some("binary") => WordFormat::Binary,
+                Some("decimal") => WordFormat::Decimal,
+                Some(format) => {
+                    println!("unrecognized format '{format}'");
+                    return CmdResult::Continue;
+                }
+                None => {
+                    println!("missing format after `{cmd}` command");
+                    return CmdResult::Continue;
+                }
+            };
+
+            let start = buffer.next().map(|v| v.parse().ok()).flatten();
+            let Some(start) = start else {
+                println!("invalid memory start after `{cmd}`");
+                return CmdResult::Continue;
+            };
+            let stop = buffer.next().map(|v| v.parse().ok()).flatten();
+            let Some(stop) = stop else {
+                println!("invalid memory stop after `{cmd}`");
+                return CmdResult::Continue;
+            };
+
+            println!("[#] memory:");
+            print!("[");
+            for i in start..stop {
+                print!("{}", format_word(vm.memory_value(&i).unwrap(), &format));
+                if i < stop - 1 {
+                    print!(", ");
+                }
+            }
+            println!("]");
+        }
+
         Some("exit") => {
             return CmdResult::Exit;
         }
