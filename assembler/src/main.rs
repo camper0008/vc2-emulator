@@ -1,4 +1,4 @@
-use std::{fmt::Display, fs, io, str::FromStr};
+use std::{fs, io, str::FromStr};
 
 use gumdrop::Options;
 use itertools::{Either, Itertools};
