@@ -11,6 +11,5 @@ simple_logger = "4.2.0"
 vc2-vm = { path = "../vm" }
 
 [features]
-default = ["video", "keyboard"]
-video = ["dep:sdl2"]
-keyboard = ["dep:sdl2"]
+default = ["peripherals"]
+peripherals = ["dep:sdl2"]

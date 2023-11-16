@@ -7,6 +7,8 @@ mod utils;
 
 const VM_HALT_MS: u64 = 133;
 const VM_MEMORY_BYTES: usize = 0x4000;
+#[cfg(feature = "peripherals")]
+mod peripherals;
 
 fn vm_from_file(file_name: &str) -> io::Result<Vm<VM_MEMORY_BYTES, VM_HALT_MS>> {
     let instructions = std::fs::read(file_name)?;
@@ -248,6 +250,9 @@ fn main() -> Result<(), io::Error> {
         .init()
         .unwrap();
     println!("enter commands (try `help`):");
+
+    #[cfg(feature = "peripherals")]
+    peripherals::window();
 
     loop {
         print!("> ");
