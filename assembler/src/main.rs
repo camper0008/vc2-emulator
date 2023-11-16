@@ -1,8 +1,24 @@
-use std::{fs, io};
+use std::{fmt::Display, fs, io, str::FromStr};
 
 use gumdrop::Options;
 use itertools::{Either, Itertools};
 use vc2_assembler::{instructions::InstructionOrLabel, Assembler};
+
+struct OutFileWrapper(String);
+
+impl Default for OutFileWrapper {
+    fn default() -> Self {
+        Self(String::from("out.o"))
+    }
+}
+
+impl FromStr for OutFileWrapper {
+    type Err = std::convert::Infallible;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Ok(Self(s.to_string()))
+    }
+}
 
 #[derive(Options)]
 struct MyOptions {
@@ -10,11 +26,17 @@ struct MyOptions {
     help: bool,
 
     #[options(
-        help = "path to file to convert",
+        help = "get input from <file>",
         required,
         parse(try_from_str = "read_file")
     )]
     file: String,
+
+    #[options(help = "write output to <file>")]
+    out: OutFileWrapper,
+
+    #[options(help = "print debug output")]
+    verbose: bool,
 }
 
 fn read_file(path: &str) -> io::Result<String> {
@@ -24,6 +46,8 @@ fn read_file(path: &str) -> io::Result<String> {
 fn main() {
     let MyOptions {
         file: file_contents,
+        verbose,
+        out: out_file,
         ..
     } = Options::parse_args_default_or_exit();
 
@@ -55,15 +79,18 @@ fn main() {
         }
         std::process::exit(1);
     }
-    println!("nodes:");
-    println!("{ok:#?}");
-    println!();
-    println!("machine code:");
     let assembler = Assembler::new(&ok);
     let out = assembler.assemble();
-    for byte in &out {
-        print!("{byte:#04X} ")
+
+    if verbose {
+        println!("nodes:");
+        println!("{ok:#?}");
+        println!();
+        println!("machine code:");
+        for byte in &out {
+            print!("{byte:#04X} ")
+        }
+        println!();
     }
-    println!();
-    fs::write("out.o", out).unwrap();
+    fs::write(out_file.0, out).unwrap();
 }
