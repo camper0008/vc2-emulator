@@ -6,7 +6,7 @@ commands:
     show this menu
 - exit
     exit the inspector
-- (unimpl) inline [hex|binary|decimal] <byte*>
+- inline <byte*>
     start a new vm with a list of whitespace-seperated bytes as instructions
 - load|file <path>
     start a new vm with the contents of '<path>' as instructions

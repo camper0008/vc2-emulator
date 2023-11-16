@@ -1,7 +1,9 @@
 use simple_logger::SimpleLogger;
 use std::io::{self, Write};
+use utils::parse_integer;
 
 use vc2_vm::Vm;
+mod utils;
 
 const VM_HALT_MS: u64 = 133;
 const VM_MEMORY_BYTES: usize = 0x4000;
@@ -37,11 +39,11 @@ fn word_format(cmd: &str, word: Option<&str>) -> Option<WordFormat> {
         Some("bin" | "binary") => Some(WordFormat::Binary),
         Some("dec" | "decimal") => Some(WordFormat::Decimal),
         Some(format) => {
-            println!("unrecognized format '{format}'");
+            println!("unrecognized output format '{format}'");
             None
         }
         None => {
-            println!("missing format after `{cmd}` command");
+            println!("missing output format after `{cmd}` command");
             None
         }
     }
@@ -75,7 +77,7 @@ fn execute_cmd(
                    return CmdResult::Continue;
                 };
 
-            let amount = buffer.next().map(|v| v.parse()).unwrap_or(Ok(1));
+            let amount = buffer.next().map(parse_integer).unwrap_or(Ok(1));
             let Ok(amount): Result<usize, _> = amount else {
                     println!("amount '{}' is not a usize", amount.unwrap_err());
                    return CmdResult::Continue;
@@ -87,7 +89,33 @@ fn execute_cmd(
                 }
             });
         }
+        Some("inline") => {
+            let mut bytes = Vec::new();
 
+            loop {
+                let Some(byte) = buffer.next() else {
+                    break;
+                };
+                if byte == "&&" {
+                    println!("&& is not supported with the inline command");
+                    break;
+                }
+
+                let Some(byte) = buffer.next() else {
+                    unreachable!();
+                };
+
+                bytes.push(match parse_integer::<u8>(byte) {
+                    Ok(v) => v,
+                    Err(err) => {
+                        println!("invalid byte {byte}: '{err}'");
+                        break;
+                    }
+                });
+            }
+            *vm = Some(Vm::new(bytes));
+            println!("vm loaded from bytes")
+        }
         Some(cmd @ "repeat") => {
             let Some(amount) = buffer.next() else {
                     println!("missing amount after `{cmd}` command");
@@ -153,21 +181,38 @@ fn execute_cmd(
                     return CmdResult::Continue;
                 };
 
-            let start = buffer.next().map(|v| v.parse().ok()).flatten();
+            let start = buffer.next().map(|v| parse_integer(v).ok()).flatten();
             let Some(start) = start else {
                 println!("invalid memory start after `{cmd}`");
                 return CmdResult::Continue;
             };
-            let stop = buffer.next().map(|v| v.parse().ok()).flatten();
+            let stop = buffer.next().map(|v| parse_integer(v).ok()).flatten();
             let Some(stop) = stop else {
                 println!("invalid memory stop after `{cmd}`");
                 return CmdResult::Continue;
             };
 
+            if start >= stop {
+                println!("start {start} cannot be >= stop {stop}; range is exclusive");
+                return CmdResult::Continue;
+            }
+
             println!("[#] memory:");
             print!("[");
             for i in start..stop {
-                print!("{}", format_word(vm.memory_value(&i).unwrap(), &format));
+                let value = match vm.memory_value(&i) {
+                    Ok(v) => v,
+                    Err(err) => {
+                        println!("]");
+
+                        println!(
+                            "unable to access memory at {}:\n  '{err}'",
+                            format_word(i, &format)
+                        );
+                        return CmdResult::Continue;
+                    }
+                };
+                print!("{}", format_word(value, &format));
                 if i < stop - 1 {
                     print!(", ");
                 }
