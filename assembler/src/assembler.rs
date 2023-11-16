@@ -231,11 +231,7 @@ impl<'a> Assembler<'a> {
                 }
             }
             InstructionOrLabel::Label(label) => {
-                let position = if self.instructions.len() == 0 {
-                    0
-                } else {
-                    self.instructions.len() - 1
-                };
+                let position = self.instructions.len();
                 let position = position.try_into().unwrap();
                 let existing_label = self.labels.insert(label.to_string(), position);
                 match existing_label {
@@ -247,11 +243,7 @@ impl<'a> Assembler<'a> {
                 self.step();
             }
             InstructionOrLabel::SubLabel(label) => {
-                let position = if self.instructions.len() == 0 {
-                    0
-                } else {
-                    self.instructions.len() - 1
-                };
+                let position = self.instructions.len();
                 let position = position.try_into().unwrap();
                 let Some(label_key) = self.label_key(&label) else {
                     todo!("sublabel without label");
