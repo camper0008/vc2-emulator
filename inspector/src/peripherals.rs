@@ -1,17 +1,30 @@
 use std::{
+    sync::{Arc, Mutex},
     thread::{self, JoinHandle},
     time::Duration,
 };
 
-use sdl2::{event::Event, keyboard::Keycode, pixels::Color};
+pub const SCREEN_ENABLED_LOCATION: u32 = 0x2030;
+pub const SCREEN_VRAM_ADDRESS_LOCATION: u32 = 0x2034;
+pub const SCREEN_WIDTH_LOCATION: u32 = 0x2038;
+pub const SCREEN_HEIGHT_LOCATION: u32 = 0x203C;
 
-pub fn window() -> JoinHandle<()> {
+pub const SCREEN_WIDTH: u32 = 240;
+pub const SCREEN_HEIGHT: u32 = 180;
+pub const SCREEN_VRAM_ADDRESS: u32 = 0x3000;
+
+use sdl2::{event::Event, keyboard::Keycode, pixels::Color};
+use vc2_vm::Vm;
+
+pub fn window<const MEMORY_BYTES: usize, const HALT_MS: u64>(
+    vm: Arc<Mutex<Option<Vm<MEMORY_BYTES, HALT_MS>>>>,
+) -> JoinHandle<()> {
     thread::spawn(|| {
         let sdl_context = sdl2::init().unwrap();
         let video_subsystem = sdl_context.video().unwrap();
 
         let window = video_subsystem
-            .window("rust-sdl2 demo", 800, 600)
+            .window("vc2", SCREEN_WIDTH * 2, SCREEN_HEIGHT * 2)
             .position_centered()
             .build()
             .unwrap();

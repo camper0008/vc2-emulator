@@ -411,7 +411,7 @@ impl<const MEMORY_BYTE_SIZE: usize, const HALT_MS: u64> Vm<MEMORY_BYTE_SIZE, HAL
             Register::ProgramCounter => self.registers.program_counter,
         }
     }
-    fn set_register_value(&mut self, register: &Register, value: Word) {
+    pub fn set_register_value(&mut self, register: &Register, value: Word) {
         match register {
             Register::GeneralPurpose0 => self.registers.general_purpose_0 = value,
             Register::GeneralPurpose1 => self.registers.general_purpose_1 = value,
@@ -419,7 +419,7 @@ impl<const MEMORY_BYTE_SIZE: usize, const HALT_MS: u64> Vm<MEMORY_BYTE_SIZE, HAL
             Register::ProgramCounter => self.registers.program_counter = value,
         }
     }
-    fn set_memory_value(&mut self, address: &Word, value: Word) -> Result<(), String> {
+    pub fn set_memory_value(&mut self, address: &Word, value: Word) -> Result<(), String> {
         let address: usize = (address * 4)
             .try_into()
             .map_err(invalid_architecture_message)?;

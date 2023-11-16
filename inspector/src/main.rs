@@ -3,10 +3,11 @@ use std::io::{self, Write};
 use utils::parse_integer;
 
 use vc2_vm::Vm;
+
 mod utils;
 
+const VM_MEMORY_BYTES: usize = 0xFFFFF;
 const VM_HALT_MS: u64 = 133;
-const VM_MEMORY_BYTES: usize = 0x4000;
 #[cfg(feature = "peripherals")]
 mod peripherals;
 
@@ -51,6 +52,27 @@ fn word_format(cmd: &str, word: Option<&str>) -> Option<WordFormat> {
     }
 }
 
+fn initialize_vm(vm: &mut Vm<VM_MEMORY_BYTES, VM_HALT_MS>) -> Result<(), String> {
+    #[cfg(feature = "peripherals")]
+    {
+        vm.set_memory_value(&peripherals::SCREEN_ENABLED_LOCATION, 1)?;
+        vm.set_memory_value(
+            &peripherals::SCREEN_VRAM_ADDRESS_LOCATION,
+            peripherals::SCREEN_VRAM_ADDRESS,
+        )?;
+        vm.set_memory_value(
+            &peripherals::SCREEN_WIDTH_LOCATION,
+            peripherals::SCREEN_WIDTH,
+        )?;
+        vm.set_memory_value(
+            &peripherals::SCREEN_HEIGHT_LOCATION,
+            peripherals::SCREEN_HEIGHT,
+        )?;
+    }
+
+    Ok(())
+}
+
 fn execute_cmd(
     vm: &mut Option<Vm<VM_MEMORY_BYTES, VM_HALT_MS>>,
     buffer: &mut dyn Iterator<Item = &str>,
@@ -62,9 +84,9 @@ fn execute_cmd(
         Some("help") => println!("{help_menu}"),
         Some(cmd @ ("file" | "load")) => {
             let Some(file_name) = buffer.next() else {
-                    println!("missing file name after `{cmd}` command");
-                    return CmdResult::Continue;
-                };
+                println!("missing file name after `{cmd}` command");
+                return CmdResult::Continue;
+            };
             match vm_from_file(file_name) {
                 Ok(new_vm) => {
                     *vm = Some(new_vm);
@@ -75,15 +97,15 @@ fn execute_cmd(
         }
         Some("step") => {
             let Some(ref mut vm) = vm else {
-                    println!("vm not started, try `help`");
-                   return CmdResult::Continue;
-                };
+                println!("vm not started, try `help`");
+                return CmdResult::Continue;
+            };
 
             let amount = buffer.next().map(parse_integer).unwrap_or(Ok(1));
             let Ok(amount): Result<usize, _> = amount else {
-                    println!("amount '{}' is not a usize", amount.unwrap_err());
-                   return CmdResult::Continue;
-                };
+                println!("amount '{}' is not a usize", amount.unwrap_err());
+                return CmdResult::Continue;
+            };
 
             (0..amount).for_each(|_| {
                 if let Err(err) = vm.run_next_instruction() {
@@ -120,13 +142,13 @@ fn execute_cmd(
         }
         Some(cmd @ "repeat") => {
             let Some(amount) = buffer.next() else {
-                    println!("missing amount after `{cmd}` command");
-                   return CmdResult::Continue;
-                };
+                println!("missing amount after `{cmd}` command");
+                return CmdResult::Continue;
+            };
             let Ok(amount): Result<usize, _> = amount.parse() else {
-                    println!("steps '{}' is not a usize", amount);
-                   return CmdResult::Continue;
-                };
+                println!("steps '{}' is not a usize", amount);
+                return CmdResult::Continue;
+            };
 
             let buffer = buffer.collect::<Vec<_>>();
             for _ in 0..amount {
@@ -139,9 +161,9 @@ fn execute_cmd(
         }
         Some("eval") => {
             let Some(ref mut vm) = vm else {
-                    println!("vm not started, try `help`");
-                   return CmdResult::Continue;
-                };
+                println!("vm not started, try `help`");
+                return CmdResult::Continue;
+            };
             'eval_loop: loop {
                 if let Err(err) = vm.run_next_instruction() {
                     println!("vm unable to step: {err}");
@@ -152,9 +174,9 @@ fn execute_cmd(
         Some(cmd @ "registers") => {
             use vc2_vm::Register::*;
             let Some(vm) = vm else {
-                    println!("vm not started, try `help`");
-                    return CmdResult::Continue;
-                };
+                println!("vm not started, try `help`");
+                return CmdResult::Continue;
+            };
             let Some(format) = word_format(cmd, buffer.next()) else {
                 return CmdResult::Continue;
             };
@@ -176,12 +198,12 @@ fn execute_cmd(
         }
         Some(cmd @ "memory") => {
             let Some(vm) = vm else {
-                    println!("vm not started, try `help`");
-                    return CmdResult::Continue;
-                };
+                println!("vm not started, try `help`");
+                return CmdResult::Continue;
+            };
             let Some(format) = word_format(cmd, buffer.next()) else {
-                    return CmdResult::Continue;
-                };
+                return CmdResult::Continue;
+            };
 
             let start = buffer.next().map(|v| parse_integer(v).ok()).flatten();
             let Some(start) = start else {
@@ -252,7 +274,7 @@ fn main() -> Result<(), io::Error> {
     println!("enter commands (try `help`):");
 
     #[cfg(feature = "peripherals")]
-    peripherals::window();
+    peripherals::window(vm);
 
     loop {
         print!("> ");
