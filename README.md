@@ -1,3 +1,3 @@
-# vc2-emulator
+# vc2-tools
 
-emulator for [virtual computer 2 architecture](https://github.com/simonfj20/vc2)
+tools for [virtual computer 2 architecture](https://github.com/simonfj20/vc2)
