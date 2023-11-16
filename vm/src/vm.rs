@@ -603,7 +603,7 @@ impl<const MEMORY_BYTE_SIZE: usize, const HALT_MS: u64> Vm<MEMORY_BYTE_SIZE, HAL
         &mut self,
         config: Config,
         variant: ConditionalJmpVariant,
-        current_location: u32,
+        instruction_location: u32,
     ) -> Result<(), String> {
         let mut destination_value = None;
         self.run_action_with_config(config, |destination, source| {
@@ -612,19 +612,23 @@ impl<const MEMORY_BYTE_SIZE: usize, const HALT_MS: u64> Vm<MEMORY_BYTE_SIZE, HAL
                 ConditionalJmpVariant::Jnz => source != 0,
             };
             if should_jmp {
-                destination_value = Some(destination);
+                destination_value = Some(Some(destination));
             } else {
-                destination_value = Some(0);
+                destination_value = Some(None);
             }
             destination
         })?;
-        if let Some(offset) = destination_value {
-            self.set_register_value(
-                &Register::ProgramCounter,
-                current_location.wrapping_add_signed(offset as i32),
-            );
-        } else {
-            unreachable!("given closure should always run")
+        match destination_value {
+            Some(Some(offset)) => {
+                self.set_register_value(
+                    &Register::ProgramCounter,
+                    instruction_location.wrapping_add_signed(offset as i32),
+                );
+            }
+            Some(None) => {
+                log::debug!("jmp condition was false");
+            }
+            None => unreachable!("given closure should always run"),
         }
 
         Ok(())
@@ -634,7 +638,7 @@ impl<const MEMORY_BYTE_SIZE: usize, const HALT_MS: u64> Vm<MEMORY_BYTE_SIZE, HAL
         &mut self,
         config: JmpConfig,
         variant: JmpVariant,
-        location: u32,
+        instruction_location: u32,
     ) -> Result<(), String> {
         let destination = match config {
             JmpConfig::Register(register) => self.register_value(&register),
@@ -649,7 +653,7 @@ impl<const MEMORY_BYTE_SIZE: usize, const HALT_MS: u64> Vm<MEMORY_BYTE_SIZE, HAL
             JmpVariant::Absolute => self.set_register_value(&Register::ProgramCounter, destination),
             JmpVariant::Relative => self.set_register_value(
                 &Register::ProgramCounter,
-                location.wrapping_add_signed(destination as i32),
+                instruction_location.wrapping_add_signed(destination as i32),
             ),
         };
 
@@ -688,9 +692,9 @@ impl<const MEMORY_BYTE_SIZE: usize, const HALT_MS: u64> Vm<MEMORY_BYTE_SIZE, HAL
         if self.register_value(&Register::ProgramCounter) as usize >= MEMORY_BYTE_SIZE {
             return Err(String::from("out of instructions"));
         }
-        let current_location = self.register_value(&Register::ProgramCounter);
+        let instruction_location = self.register_value(&Register::ProgramCounter);
         let instruction = self.parse_next_instruction()?;
-        log::debug!("running instruction {instruction:?} at {current_location:#04X}",);
+        log::debug!("running instruction {instruction:?} at {instruction_location:#04X}",);
         match instruction {
             Instruction::Nop => (),
             Instruction::Htl => std::thread::sleep(Duration::from_millis(HALT_MS)),
@@ -709,12 +713,14 @@ impl<const MEMORY_BYTE_SIZE: usize, const HALT_MS: u64> Vm<MEMORY_BYTE_SIZE, HAL
             Instruction::IDiv(config) => self.run_generic_math_op(config, MathOpVariant::IDiv)?,
             Instruction::Rem(config) => self.run_generic_math_op(config, MathOpVariant::Rem)?,
             Instruction::Cmp(config) => self.run_cmp(config)?,
-            Instruction::Jmp(config, variant) => self.run_jmp(config, variant, current_location)?,
+            Instruction::Jmp(config, variant) => {
+                self.run_jmp(config, variant, instruction_location)?
+            }
             Instruction::Jz(config) => {
-                self.run_conditional_jmp(config, ConditionalJmpVariant::Jz, current_location)?
+                self.run_conditional_jmp(config, ConditionalJmpVariant::Jz, instruction_location)?
             }
             Instruction::Jnz(config) => {
-                self.run_conditional_jmp(config, ConditionalJmpVariant::Jnz, current_location)?
+                self.run_conditional_jmp(config, ConditionalJmpVariant::Jnz, instruction_location)?
             }
         }
         Ok(())
