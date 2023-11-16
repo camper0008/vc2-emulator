@@ -75,7 +75,7 @@ pub enum NamedInstruction {
     Jnz,
 }
 
-pub fn instruction_from_text(text: &[u8]) -> Option<NamedInstruction> {
+#[must_use] pub fn instruction_from_text(text: &[u8]) -> Option<NamedInstruction> {
     match text {
         b"nop" => Some(NamedInstruction::Nop),
         b"htl" => Some(NamedInstruction::Htl),

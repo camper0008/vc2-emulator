@@ -58,13 +58,13 @@ fn main() {
             Ok(v) => Either::Left(v),
             Err(v) => Either::Right(v),
         });
-    if err.len() != 0 {
+    if !err.is_empty() {
         let error_length = if err.len() == 1 { "error" } else { "errors" };
         println!("input has {} {error_length}:", err.len());
         for err in err {
             let contents = &file_contents[err.from.cursor..=err.to.cursor]
-                .replace("\n", "\\n")
-                .replace("\r", "\\r");
+                .replace('\n', "\\n")
+                .replace('\r', "\\r");
             if err.from.line == err.to.line && err.from.character == err.to.character {
                 println!(
                     "@ ({}:{}) {} '{contents}'",
@@ -88,7 +88,7 @@ fn main() {
         println!();
         println!("machine code:");
         for byte in &out {
-            print!("{byte:#04X} ")
+            print!("{byte:#04X} ");
         }
         println!();
     }

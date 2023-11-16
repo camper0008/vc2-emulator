@@ -96,8 +96,8 @@ impl<'a> Parser<'a> {
             }
         })?;
 
-        if (value < 0 && (value > i32::MAX as i64 || value < i32::MIN as i64))
-            || value > u32::MAX as i64
+        if (value < 0 && (value > i64::from(i32::MAX) || value < i64::from(i32::MIN)))
+            || value > i64::from(u32::MAX)
         {
             return Err(Error {
                 message: "number not within i32/u32 bounds",
@@ -182,7 +182,7 @@ impl<'a> Parser<'a> {
 
     fn parse_instruction(
         &mut self,
-        instruction: NamedInstruction,
+        instruction: &NamedInstruction,
     ) -> Result<'a, InstructionOrLabel> {
         enum InstructionConstructor {
             None(Instruction),
@@ -231,25 +231,23 @@ impl<'a> Parser<'a> {
                 constructor(target_0, target_1)
             }
         };
-        match self.ensure_no_dangling_arguments() {
-            Some(err) => return Err(err),
-            None => {}
-        };
+        if let Some(err) = self.ensure_no_dangling_arguments() {
+            return Err(err);
+        }
         Ok(InstructionOrLabel::Instruction(instruction))
     }
     fn parse_label(
         &mut self,
         text: &[u8],
-        variant: LabelVariant,
+        variant: &LabelVariant,
     ) -> Result<'a, InstructionOrLabel> {
         if self.current() != b':' {
             return Err(self.invalid_character_error("expected character ':' for label, got"));
         }
         self.step();
-        match self.ensure_no_dangling_arguments() {
-            Some(err) => return Err(err),
-            None => {}
-        };
+        if let Some(err) = self.ensure_no_dangling_arguments() {
+            return Err(err);
+        }
         let text = String::from_utf8_lossy(text).to_string();
         match variant {
             LabelVariant::Label => Ok(InstructionOrLabel::Label(text)),
@@ -266,8 +264,8 @@ impl<'a> Parser<'a> {
         let (id, _, _) = self.take_id();
         let id = id.to_vec();
         match instruction_from_text(&id) {
-            Some(instruction) => self.parse_instruction(instruction),
-            None => self.parse_label(&id, label_variant),
+            Some(instruction) => self.parse_instruction(&instruction),
+            None => self.parse_label(&id, &label_variant),
         }
     }
     fn position(&self) -> Position {
@@ -302,6 +300,7 @@ impl<'a> Parser<'a> {
             }
         }
     }
+    #[must_use]
     pub fn parse(mut self) -> Vec<Result<'a, InstructionOrLabel>> {
         let mut instructions = Vec::new();
         loop {
@@ -313,6 +312,7 @@ impl<'a> Parser<'a> {
         }
         instructions
     }
+    #[must_use]
     pub fn new(inner: &'a [u8]) -> Self {
         Self {
             inner,

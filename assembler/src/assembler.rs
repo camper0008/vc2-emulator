@@ -18,6 +18,7 @@ enum IntermediaryOutput {
 }
 
 impl<'a> Assembler<'a> {
+    #[must_use]
     pub fn new(inner: &'a [InstructionOrLabel]) -> Self {
         Self {
             current_label: None,
@@ -73,7 +74,7 @@ impl<'a> Assembler<'a> {
             Instruction::Jnz(_, _) => 0x13,
         }
     }
-    fn push_immediate(instructions: &mut Vec<IntermediaryOutput>, immediate: &u32) {
+    fn push_immediate(instructions: &mut Vec<IntermediaryOutput>, immediate: u32) {
         for byte in immediate.to_be_bytes() {
             instructions.push(IntermediaryOutput::Byte(byte));
         }
@@ -110,7 +111,7 @@ impl<'a> Assembler<'a> {
                             }
                             Target::ImmediateAddress(immediate) => {
                                 self.instructions.push(Byte(selector << 6));
-                                Self::push_immediate(&mut self.instructions, immediate);
+                                Self::push_immediate(&mut self.instructions, *immediate);
                             }
                             Target::Immediate(_) | Target::Label(_) | Target::SubLabel(_) => {
                                 unreachable!()
@@ -148,7 +149,7 @@ impl<'a> Assembler<'a> {
                                 }
                             }
                             Target::Immediate(immediate) | Target::ImmediateAddress(immediate) => {
-                                Self::push_immediate(&mut to_add, &immediate);
+                                Self::push_immediate(&mut to_add, immediate);
                             }
                             Target::Label(label) => {
                                 Self::push_label_reference(
@@ -161,18 +162,22 @@ impl<'a> Assembler<'a> {
                                 let Some(label) = self.label_key(&label) else {
                                     todo!("reached sub label without label")
                                 };
-                                Self::push_label_reference(&mut to_add, label, instruction_position)
+                                Self::push_label_reference(
+                                    &mut to_add,
+                                    label,
+                                    instruction_position,
+                                );
                             }
                         }
                         match src {
                             Target::Register(register) | Target::RegisterAddress(register) => {
                                 match to_add.first_mut() {
-                                    Some(Byte(v)) => *v |= Self::register_byte(&register) << 0,
+                                    Some(Byte(v)) => *v |= Self::register_byte(&register),
                                     _ => unreachable!(),
                                 }
                             }
                             Target::Immediate(immediate) | Target::ImmediateAddress(immediate) => {
-                                Self::push_immediate(&mut to_add, &immediate)
+                                Self::push_immediate(&mut to_add, immediate);
                             }
                             Target::Label(label) => {
                                 Self::push_label_reference(
@@ -185,7 +190,11 @@ impl<'a> Assembler<'a> {
                                 let Some(label) = self.label_key(&label) else {
                                     todo!("reached sub label without label")
                                 };
-                                Self::push_label_reference(&mut to_add, label, instruction_position)
+                                Self::push_label_reference(
+                                    &mut to_add,
+                                    label,
+                                    instruction_position,
+                                );
                             }
                         }
                         self.instructions.append(&mut to_add);
@@ -209,7 +218,7 @@ impl<'a> Assembler<'a> {
                                 }
                             }
                             Target::Immediate(immediate) | Target::ImmediateAddress(immediate) => {
-                                Self::push_immediate(&mut to_add, &immediate);
+                                Self::push_immediate(&mut to_add, immediate);
                             }
                             Target::Label(label) => {
                                 Self::push_label_reference(
@@ -222,7 +231,11 @@ impl<'a> Assembler<'a> {
                                 let Some(label) = self.label_key(&label) else {
                                     todo!("reached sub label without label")
                                 };
-                                Self::push_label_reference(&mut to_add, label, instruction_position)
+                                Self::push_label_reference(
+                                    &mut to_add,
+                                    label,
+                                    instruction_position,
+                                );
                             }
                         }
                         self.instructions.append(&mut to_add);
@@ -260,6 +273,7 @@ impl<'a> Assembler<'a> {
         }
         false
     }
+    #[must_use]
     pub fn assemble(mut self) -> Vec<u8> {
         loop {
             if self.assemble_next() {
@@ -268,7 +282,7 @@ impl<'a> Assembler<'a> {
         }
         let mut out = Vec::new();
         let mut instructions = self.instructions.iter();
-        use IntermediaryOutput::*;
+        use IntermediaryOutput::{Byte, LabelPadding, LabelReference};
 
         loop {
             let Some(next) = instructions.next() else {
@@ -283,12 +297,12 @@ impl<'a> Assembler<'a> {
                     let value = *value as i32 - *position as i32;
                     for _ in 0..3 {
                         let Some(next) = instructions.next() else {
-                            unreachable!("a label reference should always be followed by 3 label paddings")
+                            unreachable!("a label reference should always be followed by 3 label paddings");
                         };
                         assert_eq!(
                             next, &LabelPadding,
                             "a label reference should always be followed by 3 label paddings"
-                        )
+                        );
                     }
                     for i in value.to_be_bytes() {
                         out.push(i);
@@ -309,6 +323,7 @@ impl<'a> Assembler<'a> {
     pub fn step(&mut self) {
         self.cursor += 1;
     }
+    #[must_use]
     pub fn current(&self) -> InstructionOrLabel {
         self.inner[self.cursor].clone()
     }
