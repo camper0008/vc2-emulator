@@ -7,8 +7,8 @@ use crate::{
 
 pub type Immediate = crate::arch::Word;
 
-pub struct Vm<const MEMORY_BYTE_SIZE: usize, const HALT_MS: u64> {
-    memory: [u8; MEMORY_BYTE_SIZE],
+pub struct Vm<const HALT_MS: u64> {
+    memory: Vec<u8>,
     registers: VmRegisters,
 }
 
@@ -156,9 +156,9 @@ pub enum ConditionalJmpVariant {
     Jnz,
 }
 
-impl<const MEMORY_BYTE_SIZE: usize, const HALT_MS: u64> Vm<MEMORY_BYTE_SIZE, HALT_MS> {
-    pub fn new(instructions: Vec<u8>) -> Self {
-        let mut memory = [0; MEMORY_BYTE_SIZE];
+impl<const HALT_MS: u64> Vm<HALT_MS> {
+    pub fn new(instructions: Vec<u8>, memory_size: usize) -> Self {
+        let mut memory = vec![0; memory_size];
         instructions
             .into_iter()
             .enumerate()
@@ -689,7 +689,7 @@ impl<const MEMORY_BYTE_SIZE: usize, const HALT_MS: u64> Vm<MEMORY_BYTE_SIZE, HAL
     }
 
     pub fn run_next_instruction(&mut self) -> Result<(), String> {
-        if self.register_value(&Register::ProgramCounter) as usize >= MEMORY_BYTE_SIZE {
+        if self.register_value(&Register::ProgramCounter) as usize >= self.memory.len() {
             return Err(String::from("out of instructions"));
         }
         let instruction_location = self.register_value(&Register::ProgramCounter);
