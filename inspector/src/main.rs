@@ -12,7 +12,7 @@ use vc2_vm::Vm;
 
 mod utils;
 
-const VM_MEMORY_BYTES: usize = 0xFFFFFFFF;
+const VM_MEMORY_BYTES: usize = 0x30000;
 
 #[cfg(feature = "peripherals")]
 mod peripherals;

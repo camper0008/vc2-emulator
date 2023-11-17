@@ -7,14 +7,14 @@ mov [0x1512], 0x00008800
 ; [0x1521]
 
 buffer_one:
-    mov [0x2034], 0x3000
-    mov [0x1520], 0xC43496
+    mov [0x2034], 12000
+    mov [0x1520], 23000
     mov [0x1521], 1
     jmp main
 
 buffer_two:
-    mov [0x2034], 0xC43496
-    mov [0x1520], 0x3000
+    mov [0x2034], 23000
+    mov [0x1520], 12000
     mov [0x1521], 0
     jmp main
 
