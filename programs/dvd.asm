@@ -1,4 +1,4 @@
-; dvd logo
+; program that displays a block moving like the dvd patterns
 
 main:
     ; &700 = x_velocity
