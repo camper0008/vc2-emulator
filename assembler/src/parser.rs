@@ -191,7 +191,7 @@ impl<'a> Parser<'a> {
         }
         let constructor = match instruction {
             NamedInstruction::Nop => InstructionConstructor::None(Instruction::Nop),
-            NamedInstruction::Htl => InstructionConstructor::None(Instruction::Htl),
+            NamedInstruction::Hlt => InstructionConstructor::None(Instruction::Hlt),
             NamedInstruction::Mov => InstructionConstructor::Two(Instruction::Mov),
             NamedInstruction::Not => InstructionConstructor::One(Instruction::Not),
             NamedInstruction::Or => InstructionConstructor::Two(Instruction::Or),

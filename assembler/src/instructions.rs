@@ -29,7 +29,7 @@ pub enum InstructionOrLabel {
 #[derive(Debug, Clone)]
 pub enum Instruction {
     Nop,
-    Htl,
+    Hlt,
     Mov(Target, Target),
     Not(Target),
     Or(Target, Target),
@@ -53,7 +53,7 @@ pub enum Instruction {
 #[derive(Debug)]
 pub enum NamedInstruction {
     Nop,
-    Htl,
+    Hlt,
     Mov,
     Not,
     Or,
@@ -75,10 +75,11 @@ pub enum NamedInstruction {
     Jnz,
 }
 
-#[must_use] pub fn instruction_from_text(text: &[u8]) -> Option<NamedInstruction> {
+#[must_use]
+pub fn instruction_from_text(text: &[u8]) -> Option<NamedInstruction> {
     match text {
         b"nop" => Some(NamedInstruction::Nop),
-        b"htl" => Some(NamedInstruction::Htl),
+        b"hlt" => Some(NamedInstruction::Hlt),
         b"mov" => Some(NamedInstruction::Mov),
         b"not" => Some(NamedInstruction::Not),
         b"or" => Some(NamedInstruction::Or),

@@ -53,7 +53,7 @@ impl<'a> Assembler<'a> {
     fn instruction_byte(instruction: &Instruction) -> u8 {
         match instruction {
             Instruction::Nop => 0x00,
-            Instruction::Htl => 0x01,
+            Instruction::Hlt => 0x01,
             Instruction::Mov(_, _) => 0x02,
             Instruction::Or(_, _) => 0x03,
             Instruction::And(_, _) => 0x04,
@@ -100,7 +100,7 @@ impl<'a> Assembler<'a> {
                 self.instructions
                     .push(Byte(Self::instruction_byte(&instruction)));
                 match instruction {
-                    Instruction::Nop | Instruction::Htl => {}
+                    Instruction::Nop | Instruction::Hlt => self.step(),
                     Instruction::Not(target) => {
                         let selector = Self::selector_from_target(&target);
 
@@ -292,12 +292,14 @@ impl<'a> Assembler<'a> {
                 Byte(v) => out.push(*v),
                 LabelReference(label, position) => {
                     let Some(value) = self.labels.get(label) else {
-                        todo!("unrecognized label {label}");
+                        todo!("error: unrecognized label '{label}' pointing to {position}");
                     };
                     let value = *value as i32 - *position as i32;
                     for _ in 0..3 {
                         let Some(next) = instructions.next() else {
-                            unreachable!("a label reference should always be followed by 3 label paddings");
+                            unreachable!(
+                                "a label reference should always be followed by 3 label paddings"
+                            );
                         };
                         assert_eq!(
                             next, &LabelPadding,
