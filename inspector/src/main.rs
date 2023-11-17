@@ -1,19 +1,26 @@
+use gumdrop::Options;
+use log::LevelFilter;
 use simple_logger::SimpleLogger;
-use std::io::{self, Write};
+use std::{
+    io::{self, Write},
+    sync::{Arc, Mutex},
+    time::Instant,
+};
 use utils::parse_integer;
 
 use vc2_vm::Vm;
 
 mod utils;
 
-const VM_MEMORY_BYTES: usize = 0xFFFFF;
+const VM_MEMORY_BYTES: usize = 0xFFFFFF;
 const VM_HALT_MS: u64 = 133;
+
 #[cfg(feature = "peripherals")]
 mod peripherals;
 
-fn vm_from_file(file_name: &str) -> io::Result<Vm<VM_MEMORY_BYTES, VM_HALT_MS>> {
+fn vm_from_file(file_name: &str) -> io::Result<Vm<VM_HALT_MS>> {
     let instructions = std::fs::read(file_name)?;
-    Ok(Vm::new(instructions))
+    Ok(Vm::new(instructions, VM_MEMORY_BYTES))
 }
 
 enum WordFormat {
@@ -52,7 +59,7 @@ fn word_format(cmd: &str, word: Option<&str>) -> Option<WordFormat> {
     }
 }
 
-fn initialize_vm(vm: &mut Vm<VM_MEMORY_BYTES, VM_HALT_MS>) -> Result<(), String> {
+fn initialize_vm(vm: &mut Vm<VM_HALT_MS>) -> Result<(), String> {
     #[cfg(feature = "peripherals")]
     {
         vm.set_memory_value(&peripherals::SCREEN_ENABLED_LOCATION, 1)?;
@@ -74,7 +81,7 @@ fn initialize_vm(vm: &mut Vm<VM_MEMORY_BYTES, VM_HALT_MS>) -> Result<(), String>
 }
 
 fn execute_cmd(
-    vm: &mut Option<Vm<VM_MEMORY_BYTES, VM_HALT_MS>>,
+    vm: &mut Arc<Mutex<Option<Vm<VM_HALT_MS>>>>,
     buffer: &mut dyn Iterator<Item = &str>,
 ) -> CmdResult {
     let help_menu = include_str!("help.txt");
@@ -88,15 +95,19 @@ fn execute_cmd(
                 return CmdResult::Continue;
             };
             match vm_from_file(file_name) {
-                Ok(new_vm) => {
+                Ok(mut new_vm) => {
+                    let mut vm = vm.lock().unwrap();
+                    initialize_vm(&mut new_vm).unwrap();
                     *vm = Some(new_vm);
+                    drop(vm);
                     println!("vm loaded from file '{file_name}'")
                 }
                 Err(err) => println!("error loading vm from file '{file_name}': {err}"),
             }
         }
         Some("step") => {
-            let Some(ref mut vm) = vm else {
+            let mut vm = vm.lock().unwrap();
+            let Some(ref mut vm) = *vm else {
                 println!("vm not started, try `help`");
                 return CmdResult::Continue;
             };
@@ -120,14 +131,11 @@ fn execute_cmd(
                 let Some(byte) = buffer.next() else {
                     break;
                 };
+
                 if byte == "&&" {
                     println!("&& is not supported with the inline command");
                     break;
                 }
-
-                let Some(byte) = buffer.next() else {
-                    unreachable!();
-                };
 
                 bytes.push(match parse_integer::<u8>(byte) {
                     Ok(v) => v,
@@ -137,8 +145,12 @@ fn execute_cmd(
                     }
                 });
             }
-            *vm = Some(Vm::new(bytes));
-            println!("vm loaded from bytes")
+            let mut vm = vm.lock().unwrap();
+            let mut new_vm = Vm::new(bytes, VM_MEMORY_BYTES);
+            initialize_vm(&mut new_vm).unwrap();
+            *vm = Some(new_vm);
+            println!("vm loaded from bytes");
+            drop(vm);
         }
         Some(cmd @ "repeat") => {
             let Some(amount) = buffer.next() else {
@@ -160,20 +172,31 @@ fn execute_cmd(
             }
         }
         Some("eval") => {
-            let Some(ref mut vm) = vm else {
-                println!("vm not started, try `help`");
-                return CmdResult::Continue;
-            };
+            let mut steps = 0;
+            let now = Instant::now();
             'eval_loop: loop {
+                let mut vm_ref = vm.lock().unwrap();
+                let Some(ref mut vm) = *vm_ref else {
+                    println!("vm not started, try `help`");
+                    return CmdResult::Continue;
+                };
                 if let Err(err) = vm.run_next_instruction() {
                     println!("vm unable to step: {err}");
                     break 'eval_loop;
                 }
+                drop(vm_ref);
+                steps += 1;
             }
+            let now = Instant::now() - now;
+            println!(
+                "evaluated program in {}ms and {steps} steps",
+                now.as_millis()
+            );
         }
         Some(cmd @ "registers") => {
             use vc2_vm::Register::*;
-            let Some(vm) = vm else {
+            let vm = vm.lock().unwrap();
+            let Some(ref vm) = *vm else {
                 println!("vm not started, try `help`");
                 return CmdResult::Continue;
             };
@@ -197,7 +220,8 @@ fn execute_cmd(
             );
         }
         Some(cmd @ "memory") => {
-            let Some(vm) = vm else {
+            let vm = vm.lock().unwrap();
+            let Some(ref vm) = *vm else {
                 println!("vm not started, try `help`");
                 return CmdResult::Continue;
             };
@@ -263,18 +287,28 @@ fn execute_cmd(
     }
 }
 
+#[derive(Options)]
+struct MyOptions {
+    #[options(help = "print help message")]
+    help: bool,
+
+    #[options(help = "log level (off, debug, warn, error)", default = "off")]
+    log_level: LevelFilter,
+}
+
 fn main() -> Result<(), io::Error> {
+    let MyOptions { log_level, .. } = Options::parse_args_default_or_exit();
     println!("[#] vc2-inspector started");
-    let mut vm: Option<Vm<VM_MEMORY_BYTES, VM_HALT_MS>> = None;
+    let mut vm: Arc<Mutex<Option<Vm<VM_HALT_MS>>>> = Arc::new(Mutex::new(None));
     SimpleLogger::new()
         .without_timestamps()
-        .env()
+        .with_level(log_level)
         .init()
         .unwrap();
     println!("enter commands (try `help`):");
 
     #[cfg(feature = "peripherals")]
-    peripherals::window(vm);
+    peripherals::window(vm.clone());
 
     loop {
         print!("> ");

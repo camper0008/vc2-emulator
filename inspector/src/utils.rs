@@ -36,3 +36,7 @@ pub fn parse_integer<T: FromStrRadix + FromStr<Err = ParseIntError>>(
         value.parse()
     }
 }
+
+pub fn sleep() {
+    ::std::thread::sleep(std::time::Duration::new(0, 1_000_000_000u32 / 60));
+}
