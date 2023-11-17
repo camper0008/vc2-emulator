@@ -18,11 +18,12 @@ use vc2_vm::Vm;
 
 use crate::utils::sleep;
 
-fn render_canvas(canvas: &mut WindowCanvas, vm: &Vm) {
+fn render_canvas(canvas: &mut WindowCanvas, vm: &Vm) -> Result<(), String> {
+    let vram_address = vm.memory_value(&SCREEN_VRAM_ADDRESS_LOCATION)?;
     for x in 0..SCREEN_WIDTH {
         for y in 0..SCREEN_HEIGHT {
             let pixel = vm
-                .memory_value(&(SCREEN_VRAM_ADDRESS + x + y * SCREEN_WIDTH))
+                .memory_value(&(vram_address + x + y * SCREEN_WIDTH))
                 .unwrap();
             let r = ((pixel & 0xFF000000) >> 24) as u8;
             let g = ((pixel & 0x00FF0000) >> 16) as u8;
@@ -30,9 +31,10 @@ fn render_canvas(canvas: &mut WindowCanvas, vm: &Vm) {
             canvas.set_draw_color(Color::RGB(r, g, b));
             let x = (SCALE * x) as i32;
             let y = (SCALE * y) as i32;
-            canvas.fill_rect(Rect::new(x, y, SCALE, SCALE)).unwrap();
+            canvas.fill_rect(Rect::new(x, y, SCALE, SCALE))?;
         }
     }
+    Ok(())
 }
 
 pub fn window(vm: Arc<Mutex<Option<Vm>>>) -> JoinHandle<()> {
@@ -53,7 +55,7 @@ pub fn window(vm: Arc<Mutex<Option<Vm>>>) -> JoinHandle<()> {
             {
                 let vm = vm.lock().unwrap();
                 match *vm {
-                    Some(ref vm) => render_canvas(&mut canvas, vm),
+                    Some(ref vm) => render_canvas(&mut canvas, vm).unwrap(),
                     None => {
                         let v = (i.sin() * 127.0 * 0.5 + 127.0 * 0.5) as u8;
                         canvas.set_draw_color(Color::RGB(v, v, v));
