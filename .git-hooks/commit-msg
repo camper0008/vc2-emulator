@@ -1,0 +1,10 @@
+#!/bin/sh
+
+# checks if commit starts with `anything_but_spaces:`
+cat $1 | grep -q -E "^\\S+:\\s"
+if [ $? -ne 0 ]
+then
+    echo "bad message format, should be 'directory: message', for example 'vm: switch stack to heap'"
+    exit 1
+fi
+exit 0
