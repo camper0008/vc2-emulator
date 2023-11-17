@@ -13,12 +13,11 @@ use vc2_vm::Vm;
 mod utils;
 
 const VM_MEMORY_BYTES: usize = 0xFFFFFF;
-const VM_HALT_MS: u64 = 133;
 
 #[cfg(feature = "peripherals")]
 mod peripherals;
 
-fn vm_from_file(file_name: &str) -> io::Result<Vm<VM_HALT_MS>> {
+fn vm_from_file(file_name: &str) -> io::Result<Vm> {
     let instructions = std::fs::read(file_name)?;
     Ok(Vm::new(instructions, VM_MEMORY_BYTES))
 }
@@ -59,7 +58,7 @@ fn word_format(cmd: &str, word: Option<&str>) -> Option<WordFormat> {
     }
 }
 
-fn initialize_vm(vm: &mut Vm<VM_HALT_MS>) -> Result<(), String> {
+fn initialize_vm(vm: &mut Vm) -> Result<(), String> {
     #[cfg(feature = "peripherals")]
     {
         vm.set_memory_value(&peripherals::SCREEN_ENABLED_LOCATION, 1)?;
@@ -81,7 +80,7 @@ fn initialize_vm(vm: &mut Vm<VM_HALT_MS>) -> Result<(), String> {
 }
 
 fn execute_cmd(
-    vm: &mut Arc<Mutex<Option<Vm<VM_HALT_MS>>>>,
+    vm: &mut Arc<Mutex<Option<Vm>>>,
     buffer: &mut dyn Iterator<Item = &str>,
 ) -> CmdResult {
     let help_menu = include_str!("help.txt");
@@ -299,7 +298,7 @@ struct MyOptions {
 fn main() -> Result<(), io::Error> {
     let MyOptions { log_level, .. } = Options::parse_args_default_or_exit();
     println!("[#] vc2-inspector started");
-    let mut vm: Arc<Mutex<Option<Vm<VM_HALT_MS>>>> = Arc::new(Mutex::new(None));
+    let mut vm: Arc<Mutex<Option<Vm>>> = Arc::new(Mutex::new(None));
     SimpleLogger::new()
         .without_timestamps()
         .with_level(log_level)

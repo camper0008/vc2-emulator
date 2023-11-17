@@ -18,7 +18,7 @@ use vc2_vm::Vm;
 
 use crate::utils::sleep;
 
-fn render_canvas<const HALT_MS: u64>(canvas: &mut WindowCanvas, vm: &Vm<HALT_MS>) {
+fn render_canvas(canvas: &mut WindowCanvas, vm: &Vm) {
     for x in 0..SCREEN_WIDTH {
         for y in 0..SCREEN_HEIGHT {
             let pixel = vm
@@ -35,7 +35,7 @@ fn render_canvas<const HALT_MS: u64>(canvas: &mut WindowCanvas, vm: &Vm<HALT_MS>
     }
 }
 
-pub fn window<const HALT_MS: u64>(vm: Arc<Mutex<Option<Vm<HALT_MS>>>>) -> JoinHandle<()> {
+pub fn window(vm: Arc<Mutex<Option<Vm>>>) -> JoinHandle<()> {
     thread::spawn(move || {
         let sdl_context = sdl2::init().unwrap();
         let video_subsystem = sdl_context.video().unwrap();

@@ -1,5 +1,3 @@
-use std::time::Duration;
-
 use crate::{
     arch::Word,
     named_instruction::{self, NamedInstruction},
@@ -7,9 +5,10 @@ use crate::{
 
 pub type Immediate = crate::arch::Word;
 
-pub struct Vm<const HALT_MS: u64> {
+pub struct Vm {
     memory: Vec<u8>,
     registers: VmRegisters,
+    hlt_location: Option<Word>,
 }
 
 pub struct VmRegisters {
@@ -107,7 +106,7 @@ pub enum JmpConfig {
 #[derive(Debug)]
 pub enum Instruction {
     Nop,
-    Htl,
+    Hlt,
     Mov(Config),
     Not(Register),
     Or(Config),
@@ -156,7 +155,7 @@ pub enum ConditionalJmpVariant {
     Jnz,
 }
 
-impl<const HALT_MS: u64> Vm<HALT_MS> {
+impl Vm {
     pub fn new(instructions: Vec<u8>, memory_size: usize) -> Self {
         let mut memory = vec![0; memory_size];
         instructions
@@ -165,6 +164,7 @@ impl<const HALT_MS: u64> Vm<HALT_MS> {
             .for_each(|(idx, byte)| memory[idx] = byte);
         Self {
             memory,
+            hlt_location: None,
             registers: VmRegisters {
                 general_purpose_0: 0,
                 general_purpose_1: 0,
@@ -261,9 +261,9 @@ impl<const HALT_MS: u64> Vm<HALT_MS> {
         self.step();
         Ok(Instruction::Nop)
     }
-    fn parse_htl(&mut self) -> Result<Instruction, String> {
+    fn parse_hlt(&mut self) -> Result<Instruction, String> {
         self.step();
-        Ok(Instruction::Htl)
+        Ok(Instruction::Hlt)
     }
     fn parse_not(&mut self) -> Result<Instruction, String> {
         self.step();
@@ -382,7 +382,7 @@ impl<const HALT_MS: u64> Vm<HALT_MS> {
         log::debug!("parsing instruction {next:?} ({current_byte:#02X})");
         match next {
             named_instruction::Nop => self.parse_nop(),
-            named_instruction::Hlt => self.parse_htl(),
+            named_instruction::Hlt => self.parse_hlt(),
             named_instruction::Mov => self.parse_mov(),
 
             named_instruction::Or
@@ -545,14 +545,10 @@ impl<const HALT_MS: u64> Vm<HALT_MS> {
         let mut set_carry_bit = None;
 
         self.run_action_with_config(config, |destination, source| {
-            let result = destination.checked_sub(source + carry_bit);
-            if let Some(destination_value) = result {
-                set_carry_bit = Some(false);
-                destination_value
-            } else {
-                set_carry_bit = Some(true);
-                0
-            }
+            let (result, overflowed) =
+                (destination as i32).overflowing_sub_unsigned(source + carry_bit);
+            set_carry_bit = Some(overflowed);
+            result as u32
         })?;
 
         let flag_value = if let Some(set_carry_bit) = set_carry_bit {
@@ -576,14 +572,10 @@ impl<const HALT_MS: u64> Vm<HALT_MS> {
         let mut set_carry_bit = None;
 
         self.run_action_with_config(config, |destination, source| {
-            let result = destination.checked_add(source + carry_bit);
-            if let Some(destination_value) = result {
-                set_carry_bit = Some(false);
-                destination_value
-            } else {
-                set_carry_bit = Some(true);
-                0
-            }
+            let (result, overflowed) =
+                (destination as i32).overflowing_add_unsigned(source + carry_bit);
+            set_carry_bit = Some(overflowed);
+            result as u32
         })?;
 
         let flag_value = if let Some(set_carry_bit) = set_carry_bit {
@@ -693,11 +685,21 @@ impl<const HALT_MS: u64> Vm<HALT_MS> {
             return Err(String::from("out of instructions"));
         }
         let instruction_location = self.register_value(&Register::ProgramCounter);
+
+        if let Some(hlt_location) = self.hlt_location {
+            if instruction_location == hlt_location {
+                return Ok(());
+            }
+            self.hlt_location = None;
+        }
+
         let instruction = self.parse_next_instruction()?;
         log::debug!("running instruction {instruction:?} at {instruction_location:#04X}",);
         match instruction {
             Instruction::Nop => (),
-            Instruction::Htl => std::thread::sleep(Duration::from_millis(HALT_MS)),
+            Instruction::Hlt => {
+                self.hlt_location = Some(self.register_value(&Register::ProgramCounter));
+            }
             Instruction::Mov(config) => self.run_mov(config)?,
             Instruction::Not(config) => self.run_not(config),
             Instruction::Or(config) => self.run_generic_math_op(config, MathOpVariant::Or)?,
