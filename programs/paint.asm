@@ -6,6 +6,7 @@
 ; 0x100B     [B]uffer being rendered
 ; 0x100C     [C]ursor 
 ; 0x105C     [5]elected [C]olor
+; 0x115C     [1]ndex [5]elected [C]olor
 ; 0x10B1     Painting [B]uffer [1]ndex
              
 ; 0x2034     Vram address
@@ -54,77 +55,101 @@ swap_buffer:
         mov [0x100B], 23520
         jmp wait_for_keypress
 
+map_selected_color:
+    mov r0, [0x115C]
+
+    .set_red:
+        mov [0x105C], 0xFF000000
+        jz render_painting_buffer, r0
+        sub r0, 1
+
+    .set_yellow:
+        mov [0x105C], 0xFFFF0000
+        jz render_painting_buffer, r0
+        sub r0, 1
+
+    .set_green:
+        mov [0x105C], 0x00FF0000
+        jz render_painting_buffer, r0
+        sub r0, 1
+
+    .set_teal:
+        mov [0x105C], 0x00FFFF00
+        jz render_painting_buffer, r0
+        sub r0, 1
+
+    .set_blue:
+        mov [0x105C], 0x0000FF00
+        jz render_painting_buffer, r0
+        sub r0, 1
+
+    .set_purple:
+        mov [0x105C], 0xFF00FF00
+        jz render_painting_buffer, r0
+        sub r0, 1
+
+    .set_gray:
+        mov [0x105C], 0xCCCCCC00
+        jz render_painting_buffer, r0
+        sub r0, 1
+
+    .set_white:
+        mov [0x105C], 0xFFFFFF00
+        jz render_painting_buffer, r0
+        sub r0, 1
+
+    .set_dark_red:
+        mov [0x105C], 0x99000000
+        jz render_painting_buffer, r0
+        sub r0, 1
+
+    .set_dark_yellow:
+        mov [0x105C], 0x99990000
+        jz render_painting_buffer, r0
+        sub r0, 1
+
+    .set_dark_green:
+        mov [0x105C], 0x00990000
+        jz render_painting_buffer, r0
+        sub r0, 1
+
+    .set_dark_teal:
+        mov [0x105C], 0x00999900
+        jz render_painting_buffer, r0
+        sub r0, 1
+
+    .set_dark_blue:
+        mov [0x105C], 0x00009900
+        jz render_painting_buffer, r0
+        sub r0, 1
+
+    .set_dark_purple:
+        mov [0x105C], 0x99009900
+        jz render_painting_buffer, r0
+        sub r0, 1
+
+    .set_dark_gray:
+        mov [0x105C], 0x55555500
+        jz render_painting_buffer, r0
+        sub r0, 1
+
+    .set_black:
+        mov [0x105C], 0x00000000
+        jz render_painting_buffer, r0
+        sub r0, 1
+
 previous_selected_color:
-    jmp next_selected_color
+    sub [0x115C], 1
+    rem [0x115C], 16
+    jmp map_selected_color
 
 next_selected_color:
-    cmp [0x105C], 0xFF000000
-    and fl, 0b100
-    jnz .is_red, fl
-
-    cmp [0x105C], 0xFFFF0000
-    and fl, 0b100
-    jnz .is_yellow, fl
-
-    cmp [0x105C], 0x00FF0000
-    and fl, 0b100
-    jnz .is_green, fl
-
-    cmp [0x105C], 0x00FFFF00
-    and fl, 0b100
-    jnz .is_teal, fl
-
-    cmp [0x105C], 0x0000FF00
-    and fl, 0b100
-    jnz .is_blue, fl
-
-    cmp [0x105C], 0xFF00FF00
-    and fl, 0b100
-    jnz .is_purple, fl
-
-    cmp [0x105C], 0xFFFFFF00
-    and fl, 0b100
-    jnz .is_white, fl
-
-    cmp [0x105C], 0x00000000
-    and fl, 0b100
-    jnz .is_black, fl
-
-    .is_red:
-        mov [0x105C], 0xFFFF0000
-        jmp render_painting_buffer
-
-    .is_yellow:
-        mov [0x105C], 0x00FF0000
-        jmp render_painting_buffer
-
-    .is_green:
-        mov [0x105C], 0x00FFFF00
-        jmp render_painting_buffer
-
-    .is_teal:
-        mov [0x105C], 0x0000FF00
-        jmp render_painting_buffer
-
-    .is_blue:
-        mov [0x105C], 0xFF00FF00
-        jmp render_painting_buffer
-
-    .is_purple:
-        mov [0x105C], 0xFFFFFF00
-        jmp render_painting_buffer
-
-    .is_white:
-        mov [0x105C], 0x00000000
-        jmp render_painting_buffer
-
-    .is_black:
-        mov [0x105C], 0xFF000000
-        jmp render_painting_buffer
+    add [0x115C], 1
+    rem [0x115C], 16
+    jmp map_selected_color
 
 render_painting_buffer:
     ; get current buffer idx
-
     ; get y position
     ; x offset
     mov r1, [0x10B1]
@@ -150,6 +175,15 @@ render_painting_buffer:
     mov r1, [0x10B1]
     mov r1, [r1]
 
+    ; draw current color if at bottom of screen
+    cmp [0x10B1], 11940 ; 60*47 + 9120
+    and fl, 0b1000
+    jnz .skip_draw_current_color, fl
+
+    mov r1, [0x105C]
+
+    .skip_draw_current_color:
+
     ; turn color
     mov [r0], r1
     ; draw corners
@@ -165,13 +199,14 @@ render_painting_buffer:
     cmp [0x100C], r1
     and fl, 0b100
     jz .skip_draw_cursor, fl
+
     mov r1, [0x10B1]
     mov r1, [r1]
     not r1
     mov [r0], r1
-    mov r1, [0x105C]
     sub r0, 1
     mov [r0], r1
+
     .skip_draw_cursor:
 
     ; increment idx
@@ -232,7 +267,7 @@ key_event_happened:
         ; save original spot
         mov r1, [0x100C]
         ; move to other end; will skip moving to actual spot if at end
-        add [0x100C], 2820
+        add [0x100C], 2760 ; 60*46
         jnz render_painting_buffer, fl
 
         ; move to intended spot
@@ -248,8 +283,7 @@ key_event_happened:
         ; save original spot
         mov r1, [0x100C]
         ; move to other end; will skip moving to actual spot if at end
-        mov [0x100C], 9120
-        add [0x100C], 2880
+        mov [0x100C], 11939 ; 60 * 47 + 9120 - 1
         jnz render_painting_buffer, fl
 
         ; move to actual spot
@@ -259,13 +293,13 @@ key_event_happened:
         jmp render_painting_buffer
     .key_right:
         ; at end of buffer
-        cmp [0x100C], 11819
+        cmp [0x100C], 11939 ; 60 × 47 + 9120 - 1
         and fl, 0b100
         
         ; save original spot
         mov r1, [0x100C]
         ; move to other end; will skip moving to actual spot if at end
-        mov [0x100C], 9120
+        mov [0x100C], 9120 ; start of buffer
         jnz render_painting_buffer, fl
 
         ; move to actual spot
@@ -275,13 +309,13 @@ key_event_happened:
         jmp render_painting_buffer
     .key_down:
         ; at bottom of buffer
-        cmp [0x100C], 11940 ; 12000 - 60
+        cmp [0x100C], 11880 ; 60 * 46 + 9120
         and fl, 0b1000
 
         ; save original spot
         mov r1, [0x100C]
         ; move to other end; will skip moving to actual spot if at end
-        sub [0x100C], 2820
+        sub [0x100C], 2760 ; 60*46
         jz render_painting_buffer, fl
 
         ; move to intended spot
