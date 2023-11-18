@@ -1,9 +1,6 @@
-
 ; Painting buffer = 9120
 ; VRAM orig buffer = 9120 + 120*0.5 * 96*0.5 = 12000
-; VRAM swap buffer = 12000 + 120*96 = 23520
 
-; 0x100B     [B]uffer being rendered
 ; 0x100C     [C]ursor 
 ; 0x105C     [5]elected [C]olor
 ; 0x115C     [1]ndex [5]elected [C]olor
@@ -24,8 +21,7 @@ prepare:
     mov [0x105C], 0xFF000000
     mov [0x100C], 9120
     mov [0x10B1], 9120
-    mov [0x100B], 12000
-    mov [0x2034], 23520
+    mov [0x2034], 12000
     ; fill painting buffer with white
     .fill_with_white:
         ; get current buffer idx
@@ -41,19 +37,6 @@ prepare:
         ; reset buffer index and paint
         mov [0x10B1], 9120
         jmp render_painting_buffer
-
-swap_buffer:
-    mov r0, [0x100B]
-    rem r0, 12000
-    jz .buffer_1, r0
-    .buffer_0:
-        mov [0x100B], 12000
-        mov [0x2034], 23520
-        jmp wait_for_keypress
-    .buffer_1:
-        mov [0x2034], 12000
-        mov [0x100B], 23520
-        jmp wait_for_keypress
 
 map_selected_color:
     mov r0, [0x115C]
@@ -169,7 +152,7 @@ render_painting_buffer:
 
     ; move offset to base ptr
     add r0, r1
-    add r0, [0x100B]
+    add r0, [0x2034]
 
     ; get color at position
     mov r1, [0x10B1]
@@ -216,9 +199,9 @@ render_painting_buffer:
     and fl, 0b100
     jz render_painting_buffer, fl
 
-    ; reset buffer index and swap buffers
+    ; reset buffer index and go back to waiting for keypress
     mov [0x10B1], 9120
-    jmp swap_buffer
+    jmp wait_for_keypress
 
 key_event_happened:
     ; 0x2024 	Key event happened. 1 if press, 2 if release, else 0
