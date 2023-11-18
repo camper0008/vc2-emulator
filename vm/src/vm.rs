@@ -652,14 +652,14 @@ impl Vm {
         let mut new_flag_value = None;
 
         self.run_action_with_config(config, |destination, source| {
-            let flag_value = if destination == source { 0x4 } else { 0x0 };
+            let flag_value = if destination == source { 0b100 } else { 0 };
             let flag_value = flag_value
                 | if (destination as i32) < (source as i32) {
-                    0x8
+                    0b1000
                 } else {
-                    0x0
+                    0
                 };
-            let flag_value = flag_value | if destination < source { 0xF } else { 0x0 };
+            let flag_value = flag_value | if destination < source { 0b10000 } else { 0 };
             new_flag_value = Some(flag_value);
             destination
         })?;
