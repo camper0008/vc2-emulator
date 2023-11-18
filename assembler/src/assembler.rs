@@ -107,7 +107,7 @@ impl<'a> Assembler<'a> {
                         match &target {
                             Target::Register(register) | Target::RegisterAddress(register) => {
                                 let register = Self::register_byte(register);
-                                self.instructions.push(Byte(selector << 6 & register));
+                                self.instructions.push(Byte(selector << 6 | register << 2));
                             }
                             Target::ImmediateAddress(immediate) => {
                                 self.instructions.push(Byte(selector << 6));
@@ -291,10 +291,18 @@ impl<'a> Assembler<'a> {
             match next {
                 Byte(v) => out.push(*v),
                 LabelReference(label, position) => {
+                    let (label, is_abs) = match label.strip_prefix("abs_") {
+                        Some(label) => (label, true),
+                        None => (label.as_str(), false),
+                    };
                     let Some(value) = self.labels.get(label) else {
                         todo!("error: unrecognized label '{label}' pointing to {position}");
                     };
-                    let value = *value as i32 - *position as i32;
+                    let value = if is_abs {
+                        *value as i32
+                    } else {
+                        *value as i32 - *position as i32
+                    };
                     for _ in 0..3 {
                         let Some(next) = instructions.next() else {
                             unreachable!(
