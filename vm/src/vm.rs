@@ -104,11 +104,18 @@ pub enum JmpConfig {
 }
 
 #[derive(Debug)]
+pub enum NotConfig {
+    Register(Register),
+    RegisterAddress(Register),
+    ImmediateAddress(Immediate),
+}
+
+#[derive(Debug)]
 pub enum Instruction {
     Nop,
     Hlt,
     Mov(Config),
-    Not(Register),
+    Not(NotConfig),
     Or(Config),
     And(Config),
     Xor(Config),
@@ -270,9 +277,19 @@ impl Vm {
         let input = self.current_byte()?;
         self.step();
 
-        let destination = (input & 0b1100) >> 2;
-        let destination = destination.try_into()?;
-        Ok(Instruction::Not(destination))
+        let selector: Selector = ((input & 0b1100_0000) >> 6).try_into()?;
+        let destination: Result<Register, _> = ((input & 0b0000_1100) >> 2).try_into();
+
+        let config = match selector {
+            Selector::Register => NotConfig::Register(destination?),
+            Selector::Immediate => {
+                return Err("invalid selector 'immediate' for not instruction".to_string())
+            }
+            Selector::RegisterAddress => NotConfig::RegisterAddress(destination?),
+            Selector::ImmediateAddress => NotConfig::ImmediateAddress(self.consume_immediate()?),
+        };
+
+        Ok(Instruction::Not(config))
     }
     fn consume_immediate(&mut self) -> Result<u32, String> {
         let byte_0 = self.current_byte()?;
@@ -378,6 +395,7 @@ impl Vm {
     }
     fn parse_next_instruction(&mut self) -> Result<Instruction, String> {
         let current_byte = self.current_byte()?;
+        log::debug!("current byte: {current_byte:#02X}");
         let next: NamedInstruction = current_byte.try_into()?;
         log::debug!("parsing instruction {next:?} ({current_byte:#02X})");
         match next {
@@ -517,8 +535,22 @@ impl Vm {
     fn run_mov(&mut self, config: Config) -> Result<(), String> {
         self.run_action_with_config(config, |_destination, source| source)
     }
-    fn run_not(&mut self, config: Register) {
-        self.set_register_value(&config, !self.register_value(&config))
+    fn run_not(&mut self, config: NotConfig) -> Result<(), String> {
+        match config {
+            NotConfig::Register(register) => {
+                self.set_register_value(&register, !self.register_value(&register));
+            }
+            NotConfig::RegisterAddress(register) => {
+                let register_value = self.register_value(&register);
+                let value = self.memory_value(&register_value)?;
+                self.set_memory_value(&register_value, !value)?;
+            }
+            NotConfig::ImmediateAddress(immediate) => {
+                let value = self.memory_value(&immediate)?;
+                self.set_memory_value(&immediate, !value)?;
+            }
+        }
+        Ok(())
     }
     fn run_cmp(&mut self, config: Config) -> Result<(), String> {
         let mut new_flag_value = None;
@@ -599,6 +631,7 @@ impl Vm {
     ) -> Result<(), String> {
         let mut destination_value = None;
         self.run_action_with_config(config, |destination, source| {
+            log::debug!("source: {source}; destination: {destination}");
             let should_jmp = match variant {
                 ConditionalJmpVariant::Jz => source == 0,
                 ConditionalJmpVariant::Jnz => source != 0,
@@ -612,6 +645,7 @@ impl Vm {
         })?;
         match destination_value {
             Some(Some(offset)) => {
+                log::debug!("offset: {offset}");
                 self.set_register_value(
                     &Register::ProgramCounter,
                     instruction_location.wrapping_add_signed(offset as i32),
@@ -650,7 +684,7 @@ impl Vm {
         };
 
         log::debug!(
-            "jmp: pc={:#04X} dest={destination:#04X}",
+            "jmp: pc={:#04X} dest={destination:#04X} instruction={instruction_location:#04X}",
             self.register_value(&Register::ProgramCounter),
         );
 
@@ -693,6 +727,7 @@ impl Vm {
             self.hlt_location = None;
         }
 
+        log::debug!("parsing {instruction_location:#04X}",);
         let instruction = self.parse_next_instruction()?;
         log::debug!("running instruction {instruction:?} at {instruction_location:#04X}",);
         match instruction {
@@ -701,7 +736,7 @@ impl Vm {
                 self.hlt_location = Some(self.register_value(&Register::ProgramCounter));
             }
             Instruction::Mov(config) => self.run_mov(config)?,
-            Instruction::Not(config) => self.run_not(config),
+            Instruction::Not(config) => self.run_not(config)?,
             Instruction::Or(config) => self.run_generic_math_op(config, MathOpVariant::Or)?,
             Instruction::And(config) => self.run_generic_math_op(config, MathOpVariant::And)?,
             Instruction::Xor(config) => self.run_generic_math_op(config, MathOpVariant::Xor)?,
