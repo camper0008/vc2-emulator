@@ -32,6 +32,7 @@ impl Flag {
             Flag::CarryOrBorrow => (value & 0b0000_0010) >> 1 != 0,
             Flag::Equal => (value & 0b0000_0100) >> 2 != 0,
             Flag::Less => (value & 0b0000_1000) >> 3 != 0,
+            Flag::Below => (value & 0b0001_0000) >> 4 != 0,
         }
     }
 }
@@ -557,7 +558,13 @@ impl Vm {
 
         self.run_action_with_config(config, |destination, source| {
             let flag_value = if destination == source { 0x4 } else { 0x0 };
-            let flag_value = flag_value | if destination < source { 0x8 } else { 0x0 };
+            let flag_value = flag_value
+                | if (destination as i32) < (source as i32) {
+                    0x8
+                } else {
+                    0x0
+                };
+            let flag_value = flag_value | if destination < source { 0xF } else { 0x0 };
             new_flag_value = Some(flag_value);
             destination
         })?;
