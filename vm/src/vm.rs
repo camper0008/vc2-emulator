@@ -23,6 +23,7 @@ pub enum Flag {
     CarryOrBorrow,
     Equal,
     Less,
+    Below,
 }
 
 impl Flag {
@@ -105,6 +106,22 @@ pub enum JmpConfig {
 }
 
 #[derive(Debug)]
+pub enum ConditionalJmpConfig {
+    RegisterFromRegister(Register, Register),
+    RegisterFromImmediate(Register, Immediate),
+    RegisterFromRegisterAddress(Register, Register),
+    RegisterFromImmediateAddress(Register, Immediate),
+    ImmediateFromRegister(Immediate, Register),
+    ImmediateFromImmediate(Immediate, Immediate),
+    ImmediateFromRegisterAddress(Immediate, Register),
+    ImmediateFromImmediateAddress(Immediate, Immediate),
+    RegisterAddressFromRegister(Register, Register),
+    RegisterAddressFromImmediate(Register, Immediate),
+    ImmediateAddressFromRegister(Immediate, Register),
+    ImmediateAddressFromImmediate(Immediate, Immediate),
+}
+
+#[derive(Debug)]
 pub enum NotConfig {
     Register(Register),
     RegisterAddress(Register),
@@ -131,8 +148,8 @@ pub enum Instruction {
     Rem(Config),
     Cmp(Config),
     Jmp(JmpConfig, JmpVariant),
-    Jz(Config),
-    Jnz(Config),
+    Jz(ConditionalJmpConfig),
+    Jnz(ConditionalJmpConfig),
 }
 
 pub enum MathOpVariant {
@@ -199,6 +216,80 @@ impl Vm {
     fn step(&mut self) {
         self.registers.program_counter += 1;
     }
+    fn parse_conditional_jmp_target(
+        &mut self,
+        destination_selector: Selector,
+        source_selector: Selector,
+        destination: Result<Register, String>,
+        source: Result<Register, String>,
+    ) -> Result<ConditionalJmpConfig, String> {
+        let config = match (destination_selector, source_selector) {
+            (Selector::Register, Selector::Register) => {
+                ConditionalJmpConfig::RegisterFromRegister(destination?, source?)
+            }
+            (Selector::Register, Selector::Immediate) => {
+                ConditionalJmpConfig::RegisterFromImmediate(destination?, self.consume_immediate()?)
+            }
+            (Selector::Register, Selector::RegisterAddress) => {
+                ConditionalJmpConfig::RegisterFromRegisterAddress(destination?, source?)
+            }
+            (Selector::Register, Selector::ImmediateAddress) => {
+                ConditionalJmpConfig::RegisterFromImmediateAddress(
+                    destination?,
+                    self.consume_immediate()?,
+                )
+            }
+            (Selector::RegisterAddress, Selector::Register) => {
+                ConditionalJmpConfig::RegisterAddressFromRegister(destination?, source?)
+            }
+            (Selector::RegisterAddress, Selector::Immediate) => {
+                ConditionalJmpConfig::RegisterAddressFromImmediate(
+                    destination?,
+                    self.consume_immediate()?,
+                )
+            }
+            (Selector::ImmediateAddress, Selector::Register) => {
+                ConditionalJmpConfig::ImmediateAddressFromRegister(
+                    self.consume_immediate()?,
+                    source?,
+                )
+            }
+            (Selector::ImmediateAddress, Selector::Immediate) => {
+                ConditionalJmpConfig::ImmediateAddressFromImmediate(
+                    self.consume_immediate()?,
+                    self.consume_immediate()?,
+                )
+            }
+            (Selector::Immediate, Selector::Immediate) => {
+                ConditionalJmpConfig::ImmediateFromImmediate(
+                    self.consume_immediate()?,
+                    self.consume_immediate()?,
+                )
+            }
+            (Selector::Immediate, Selector::Register) => {
+                ConditionalJmpConfig::ImmediateFromRegister(self.consume_immediate()?, source?)
+            }
+            (Selector::Immediate, Selector::RegisterAddress) => {
+                ConditionalJmpConfig::ImmediateFromRegisterAddress(
+                    self.consume_immediate()?,
+                    source?,
+                )
+            }
+            (Selector::Immediate, Selector::ImmediateAddress) => {
+                ConditionalJmpConfig::ImmediateFromImmediateAddress(
+                    self.consume_immediate()?,
+                    self.consume_immediate()?,
+                )
+            }
+            variant => Err(format!(
+                "invalid selector/destination combo '{variant:?}' at {}",
+                self.registers.program_counter
+            ))?,
+        };
+
+        Ok(config)
+    }
+
     fn parse_target(
         &mut self,
         destination_selector: Selector,
@@ -348,8 +439,12 @@ impl Vm {
         let destination: Result<Register, _> = ((input & 0b0000_1100) >> 2).try_into();
         let source: Result<Register, _> = (input & 0b0000_0011).try_into();
 
-        let config =
-            self.parse_target(destination_selector, source_selector, destination, source)?;
+        let config = self.parse_conditional_jmp_target(
+            destination_selector,
+            source_selector,
+            destination,
+            source,
+        )?;
 
         Ok(constructor(config))
     }
@@ -632,36 +727,74 @@ impl Vm {
     }
     fn run_conditional_jmp(
         &mut self,
-        config: Config,
+        config: ConditionalJmpConfig,
         variant: ConditionalJmpVariant,
         instruction_location: u32,
     ) -> Result<(), String> {
-        let mut destination_value = None;
-        self.run_action_with_config(config, |destination, source| {
-            log::debug!("source: {source}; destination: {destination}");
-            let should_jmp = match variant {
-                ConditionalJmpVariant::Jz => source == 0,
-                ConditionalJmpVariant::Jnz => source != 0,
-            };
-            if should_jmp {
-                destination_value = Some(Some(destination));
-            } else {
-                destination_value = Some(None);
+        let should_jump = match variant {
+            ConditionalJmpVariant::Jz => |source| source == 0,
+            ConditionalJmpVariant::Jnz => |source| source != 0,
+        };
+        let (destination, source) = match config {
+            ConditionalJmpConfig::RegisterFromRegister(destination, source) => {
+                let source = self.register_value(&source);
+                let destination = self.register_value(&destination);
+                (destination, source)
             }
-            destination
-        })?;
-        match destination_value {
-            Some(Some(offset)) => {
-                log::debug!("offset: {offset}");
-                self.set_register_value(
-                    &Register::ProgramCounter,
-                    instruction_location.wrapping_add_signed(offset as i32),
-                );
+            ConditionalJmpConfig::RegisterFromImmediate(destination, source) => {
+                let destination = self.register_value(&destination);
+                (destination, source)
             }
-            Some(None) => {
-                log::debug!("jmp condition was false");
+            ConditionalJmpConfig::RegisterFromRegisterAddress(destination, source) => {
+                let source = self.memory_value(&self.register_value(&source))?;
+                let destination = self.register_value(&destination);
+                (destination, source)
             }
-            None => unreachable!("given closure should always run"),
+            ConditionalJmpConfig::RegisterFromImmediateAddress(destination, source) => {
+                let source = self.memory_value(&source)?;
+                let destination = self.register_value(&destination);
+                (destination, source)
+            }
+            ConditionalJmpConfig::ImmediateFromRegister(destination, source) => {
+                let source = self.register_value(&source);
+                (destination, source)
+            }
+            ConditionalJmpConfig::ImmediateFromImmediate(destination, source) => {
+                (destination, source)
+            }
+            ConditionalJmpConfig::ImmediateFromRegisterAddress(destination, source) => {
+                let source = self.memory_value(&self.register_value(&source))?;
+                (destination, source)
+            }
+            ConditionalJmpConfig::ImmediateFromImmediateAddress(destination, source) => {
+                let source = self.memory_value(&source)?;
+                (destination, source)
+            }
+            ConditionalJmpConfig::RegisterAddressFromRegister(destination, source) => {
+                let source = self.register_value(&source);
+                let destination = self.memory_value(&self.register_value(&destination))?;
+                (destination, source)
+            }
+            ConditionalJmpConfig::RegisterAddressFromImmediate(destination, source) => {
+                let destination = self.memory_value(&self.register_value(&destination))?;
+                (destination, source)
+            }
+            ConditionalJmpConfig::ImmediateAddressFromRegister(destination, source) => {
+                let source = self.register_value(&source);
+                let destination = self.memory_value(&destination)?;
+                (destination, source)
+            }
+            ConditionalJmpConfig::ImmediateAddressFromImmediate(destination, source) => {
+                let destination = self.memory_value(&destination)?;
+                (destination, source)
+            }
+        };
+
+        if should_jump(source) {
+            self.set_register_value(
+                &Register::ProgramCounter,
+                instruction_location + destination,
+            )
         }
 
         Ok(())
