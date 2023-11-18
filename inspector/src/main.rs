@@ -74,6 +74,12 @@ fn initialize_vm(vm: &mut Vm) -> Result<(), String> {
             &peripherals::SCREEN_HEIGHT_LOCATION,
             peripherals::SCREEN_HEIGHT,
         )?;
+        vm.set_memory_value(
+            &peripherals::SCREEN_HEIGHT_LOCATION,
+            peripherals::SCREEN_HEIGHT,
+        )?;
+
+        vm.set_memory_value(&peripherals::KEYBOARD_ENABLED_LOCATION, 1)?;
     }
 
     Ok(())
