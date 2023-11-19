@@ -19,8 +19,14 @@ pub enum Register {
 }
 
 #[derive(Debug, Clone)]
+pub enum PreprocessorCommand {
+    Offset(u32),
+}
+
+#[derive(Debug, Clone)]
 pub enum InstructionOrLabel {
     Instruction(Instruction),
+    PreprocessorCommand(PreprocessorCommand),
     Label(String),
     SubLabel(String),
     EOF,

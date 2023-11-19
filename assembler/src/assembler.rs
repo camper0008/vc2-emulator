@@ -1,6 +1,8 @@
 use std::collections::HashMap;
 
-use crate::instructions::{Instruction, InstructionOrLabel, JmpVariant, Register, Target};
+use crate::instructions::{
+    Instruction, InstructionOrLabel, JmpVariant, PreprocessorCommand, Register, Target,
+};
 
 pub struct Assembler<'a> {
     cursor: usize,
@@ -243,6 +245,14 @@ impl<'a> Assembler<'a> {
                     }
                 }
             }
+            InstructionOrLabel::PreprocessorCommand(command) => match command {
+                PreprocessorCommand::Offset(offset) => {
+                    for _ in 0..offset {
+                        self.instructions.push(IntermediaryOutput::Byte(0x0));
+                    }
+                    self.step();
+                }
+            },
             InstructionOrLabel::Label(label) => {
                 let position = self.instructions.len();
                 let position = position.try_into().unwrap();

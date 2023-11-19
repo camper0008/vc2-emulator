@@ -1,6 +1,6 @@
 use crate::instructions::{
-    instruction_from_text, Instruction, InstructionOrLabel, JmpVariant, NamedInstruction, Register,
-    Target,
+    instruction_from_text, Instruction, InstructionOrLabel, JmpVariant, NamedInstruction,
+    PreprocessorCommand, Register, Target,
 };
 
 use crate::error::{Error, Position, Result};
@@ -275,11 +275,35 @@ impl<'a> Parser<'a> {
             character: self.character,
         }
     }
+    fn parse_preprocessor_command(&mut self) -> Result<'a, InstructionOrLabel> {
+        assert_eq!(
+            self.current(),
+            b'%',
+            "should not be reached unless current is %"
+        );
+        self.step();
+        let (id, from, to) = self.take_id();
+        match id {
+            b"offset" => {
+                let (offset, from, to) = self.take_id();
+                let offset = Self::immediate_from_text(offset, from, to)?;
+                Ok(InstructionOrLabel::PreprocessorCommand(
+                    PreprocessorCommand::Offset(offset),
+                ))
+            }
+            _ => Err(Error {
+                from,
+                to,
+                message: "unknown preprocessor command",
+            }),
+        }
+    }
     fn parse_single(&mut self) -> Result<'a, InstructionOrLabel> {
         if self.done() {
             return Ok(InstructionOrLabel::EOF);
         };
         match self.current() {
+            b'%' => self.parse_preprocessor_command(),
             b';' => {
                 self.skip_line();
                 self.parse_single()
@@ -308,7 +332,7 @@ impl<'a> Parser<'a> {
                 instructions.push(Ok(InstructionOrLabel::EOF));
                 break;
             }
-            instructions.push(self.parse_single());
+            instructions.push(self.parse_single())
         }
         instructions
     }
