@@ -9,8 +9,6 @@ done
 cat *.asm > sprites.asm
 cd ..
 
-#echo "jmp main" > out.asm
-echo "" > out.asm
 cat blackjack.asm >> out.asm
 echo "%offset 0xE0000" >> out.asm
 cat tmp/sprites.asm >> out.asm
