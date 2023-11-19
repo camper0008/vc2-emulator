@@ -63,10 +63,10 @@ fn read_file(path: &str) -> Result<FileInfo<DynamicImage>, String> {
 }
 
 fn pixel_to_word(pixel: Rgba<u8>) -> String {
-    let [r, g, b, _] = pixel.channels() else {
+    let [r, g, b, a] = pixel.channels() else {
         unreachable!("rgba should have 4 channels");
     };
-    format!("0x{r:02X}{g:02X}{b:02X}00")
+    format!("0x{r:02X}{g:02X}{b:02X}{a:02X}")
 }
 
 fn image_to_instructions(vram: u32, screen_width: u32, image: Vec<(u32, u32, Rgba<u8>)>) -> String {
@@ -127,7 +127,7 @@ fn main() -> io::Result<()> {
         })
         .map(|FileInfo { name, image }| FileInfo {
             image: format!(
-                "{name}:\n{}",
+                "{name}:{}\n",
                 image_to_instructions(vram, screen_width, image)
             ),
             name,
