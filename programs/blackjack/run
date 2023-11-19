@@ -1,0 +1,6 @@
+#!/bin/sh
+
+set +xe
+
+./link-images && cargo r --bin vc2-assembler -- -f out.asm && cargo r --bin vc2-inspector -- -m 0xFFFFFF
+
