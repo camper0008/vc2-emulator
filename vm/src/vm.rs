@@ -793,7 +793,7 @@ impl Vm {
         if should_jump(source) {
             self.set_register_value(
                 &Register::ProgramCounter,
-                instruction_location + destination,
+                (instruction_location as i32 + destination as i32) as u32,
             )
         }
 
