@@ -285,6 +285,7 @@ impl<'a> Parser<'a> {
         let (id, from, to) = self.take_id();
         match id {
             b"offset" => {
+                self.skip_whitespace();
                 let (offset, from, to) = self.take_id();
                 let offset = Self::immediate_from_text(offset, from, to)?;
                 Ok(InstructionOrLabel::PreprocessorCommand(
