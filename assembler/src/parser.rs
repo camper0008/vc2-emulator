@@ -1,5 +1,5 @@
 use crate::instructions::{
-    instruction_from_text, Instruction, InstructionOrLabel, JmpVariant, NamedInstruction,
+    instruction_from_text, Instruction, InstructionOrConstant, JmpVariant, NamedInstruction,
     PreprocessorCommand, Register, Target,
 };
 
@@ -118,7 +118,7 @@ impl<'a> Parser<'a> {
                     String::from_utf8_lossy(&word[1..]).to_string(),
                 ))
             } else {
-                Ok(Target::Label(String::from_utf8_lossy(word).to_string()))
+                Ok(Target::Constant(String::from_utf8_lossy(word).to_string()))
             }
         } else {
             let immediate = Self::immediate_from_text(word, from, to)?;
@@ -146,7 +146,7 @@ impl<'a> Parser<'a> {
                     Target::Immediate(immediate) => Target::ImmediateAddress(immediate),
                     Target::RegisterAddress(_)
                     | Target::ImmediateAddress(_)
-                    | Target::Label(_)
+                    | Target::Constant(_)
                     | Target::SubLabel(_) => unreachable!(),
                 })
             }
@@ -183,7 +183,7 @@ impl<'a> Parser<'a> {
     fn parse_instruction(
         &mut self,
         instruction: &NamedInstruction,
-    ) -> Result<'a, InstructionOrLabel> {
+    ) -> Result<'a, InstructionOrConstant> {
         enum InstructionConstructor {
             None(Instruction),
             One(fn(Target) -> Instruction),
@@ -234,13 +234,13 @@ impl<'a> Parser<'a> {
         if let Some(err) = self.ensure_no_dangling_arguments() {
             return Err(err);
         }
-        Ok(InstructionOrLabel::Instruction(instruction))
+        Ok(InstructionOrConstant::Instruction(instruction))
     }
     fn parse_label(
         &mut self,
         text: &[u8],
         variant: &LabelVariant,
-    ) -> Result<'a, InstructionOrLabel> {
+    ) -> Result<'a, InstructionOrConstant> {
         if self.current() != b':' {
             return Err(self.invalid_character_error("expected character ':' for label, got"));
         }
@@ -250,11 +250,11 @@ impl<'a> Parser<'a> {
         }
         let text = String::from_utf8_lossy(text).to_string();
         match variant {
-            LabelVariant::Label => Ok(InstructionOrLabel::Label(text)),
-            LabelVariant::SubLabel => Ok(InstructionOrLabel::SubLabel(text)),
+            LabelVariant::Label => Ok(InstructionOrConstant::Label(text)),
+            LabelVariant::SubLabel => Ok(InstructionOrConstant::SubLabel(text)),
         }
     }
-    fn parse_label_or_instruction(&mut self) -> Result<'a, InstructionOrLabel> {
+    fn parse_label_or_instruction(&mut self) -> Result<'a, InstructionOrConstant> {
         let label_variant = if self.current() == b'.' {
             self.step();
             LabelVariant::SubLabel
@@ -275,7 +275,7 @@ impl<'a> Parser<'a> {
             character: self.character,
         }
     }
-    fn parse_preprocessor_command(&mut self) -> Result<'a, InstructionOrLabel> {
+    fn parse_preprocessor_command(&mut self) -> Result<'a, InstructionOrConstant> {
         assert_eq!(
             self.current(),
             b'%',
@@ -288,8 +288,19 @@ impl<'a> Parser<'a> {
                 self.skip_whitespace();
                 let (offset, from, to) = self.take_id();
                 let offset = Self::immediate_from_text(offset, from, to)?;
-                Ok(InstructionOrLabel::PreprocessorCommand(
+                Ok(InstructionOrConstant::PreprocessorCommand(
                     PreprocessorCommand::Offset(offset),
+                ))
+            }
+            b"define" => {
+                self.skip_whitespace();
+                let (name, _, _) = self.take_id();
+                let name = String::from_utf8_lossy(name).to_string();
+                self.skip_whitespace();
+                let (offset, from, to) = self.take_id();
+                let offset = Self::immediate_from_text(offset, from, to)?;
+                Ok(InstructionOrConstant::PreprocessorCommand(
+                    PreprocessorCommand::Define(name, offset),
                 ))
             }
             _ => Err(Error {
@@ -299,9 +310,9 @@ impl<'a> Parser<'a> {
             }),
         }
     }
-    fn parse_single(&mut self) -> Result<'a, InstructionOrLabel> {
+    fn parse_single(&mut self) -> Result<'a, InstructionOrConstant> {
         if self.done() {
-            return Ok(InstructionOrLabel::EOF);
+            return Ok(InstructionOrConstant::EOF);
         };
         match self.current() {
             b'%' => self.parse_preprocessor_command(),
@@ -326,11 +337,11 @@ impl<'a> Parser<'a> {
         }
     }
     #[must_use]
-    pub fn parse(mut self) -> Vec<Result<'a, InstructionOrLabel>> {
+    pub fn parse(mut self) -> Vec<Result<'a, InstructionOrConstant>> {
         let mut instructions = Vec::new();
         loop {
             if self.done() {
-                instructions.push(Ok(InstructionOrLabel::EOF));
+                instructions.push(Ok(InstructionOrConstant::EOF));
                 break;
             }
             instructions.push(self.parse_single())

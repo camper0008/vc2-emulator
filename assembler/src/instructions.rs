@@ -4,7 +4,7 @@ pub enum Target {
     RegisterAddress(Register),
     Immediate(Immediate),
     ImmediateAddress(Immediate),
-    Label(String),
+    Constant(String),
     SubLabel(String),
 }
 
@@ -21,10 +21,11 @@ pub enum Register {
 #[derive(Debug, Clone)]
 pub enum PreprocessorCommand {
     Offset(u32),
+    Define(String, u32),
 }
 
 #[derive(Debug, Clone)]
-pub enum InstructionOrLabel {
+pub enum InstructionOrConstant {
     Instruction(Instruction),
     PreprocessorCommand(PreprocessorCommand),
     Label(String),

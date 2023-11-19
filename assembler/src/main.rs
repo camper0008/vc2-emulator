@@ -2,7 +2,7 @@ use std::{fs, io, str::FromStr};
 
 use gumdrop::Options;
 use itertools::{Either, Itertools};
-use vc2_assembler::{instructions::InstructionOrLabel, Assembler};
+use vc2_assembler::{instructions::InstructionOrConstant, Assembler};
 
 struct OutFileWrapper(String);
 
@@ -53,7 +53,7 @@ fn main() {
 
     let parser = vc2_assembler::Parser::new(file_contents.as_bytes());
     let node = parser.parse();
-    let (ok, err): (Vec<InstructionOrLabel>, Vec<vc2_assembler::error::Error>) =
+    let (ok, err): (Vec<InstructionOrConstant>, Vec<vc2_assembler::error::Error>) =
         node.into_iter().partition_map(|v| match v {
             Ok(v) => Either::Left(v),
             Err(v) => Either::Right(v),

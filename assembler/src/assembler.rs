@@ -1,13 +1,18 @@
 use std::collections::HashMap;
 
 use crate::instructions::{
-    Instruction, InstructionOrLabel, JmpVariant, PreprocessorCommand, Register, Target,
+    Instruction, InstructionOrConstant, JmpVariant, PreprocessorCommand, Register, Target,
 };
+
+enum PreprocessorConstant {
+    Label(u32),
+    Define(u32),
+}
 
 pub struct Assembler<'a> {
     cursor: usize,
-    inner: &'a [InstructionOrLabel],
-    labels: HashMap<String, u32>,
+    inner: &'a [InstructionOrConstant],
+    labels: HashMap<String, PreprocessorConstant>,
     current_label: Option<String>,
     instructions: Vec<IntermediaryOutput>,
 }
@@ -15,13 +20,13 @@ pub struct Assembler<'a> {
 #[derive(Debug, PartialEq)]
 enum IntermediaryOutput {
     Byte(u8),
-    LabelReference(String, usize),
-    LabelPadding,
+    ConstantReference(String, usize),
+    ConstantPadding,
 }
 
 impl<'a> Assembler<'a> {
     #[must_use]
-    pub fn new(inner: &'a [InstructionOrLabel]) -> Self {
+    pub fn new(inner: &'a [InstructionOrConstant]) -> Self {
         Self {
             current_label: None,
             cursor: 0,
@@ -33,7 +38,7 @@ impl<'a> Assembler<'a> {
     fn selector_from_target(target: &Target) -> u8 {
         match target {
             Target::Register(_) => 0b00,
-            Target::Immediate(_) | Target::Label(_) | Target::SubLabel(_) => 0b01,
+            Target::Immediate(_) | Target::Constant(_) | Target::SubLabel(_) => 0b01,
             Target::RegisterAddress(_) => 0b10,
             Target::ImmediateAddress(_) => 0b11,
         }
@@ -86,19 +91,19 @@ impl<'a> Assembler<'a> {
         label: String,
         instruction_position: usize,
     ) {
-        instructions.push(IntermediaryOutput::LabelReference(
+        instructions.push(IntermediaryOutput::ConstantReference(
             label,
             instruction_position,
         ));
-        instructions.push(IntermediaryOutput::LabelPadding);
-        instructions.push(IntermediaryOutput::LabelPadding);
-        instructions.push(IntermediaryOutput::LabelPadding);
+        instructions.push(IntermediaryOutput::ConstantPadding);
+        instructions.push(IntermediaryOutput::ConstantPadding);
+        instructions.push(IntermediaryOutput::ConstantPadding);
     }
     fn assemble_next(&mut self) -> bool {
         use IntermediaryOutput::Byte;
         let current = self.current();
         match current {
-            InstructionOrLabel::Instruction(instruction) => {
+            InstructionOrConstant::Instruction(instruction) => {
                 self.instructions
                     .push(Byte(Self::instruction_byte(&instruction)));
                 match instruction {
@@ -115,7 +120,7 @@ impl<'a> Assembler<'a> {
                                 self.instructions.push(Byte(selector << 6));
                                 Self::push_immediate(&mut self.instructions, *immediate);
                             }
-                            Target::Immediate(_) | Target::Label(_) | Target::SubLabel(_) => {
+                            Target::Immediate(_) | Target::Constant(_) | Target::SubLabel(_) => {
                                 unreachable!()
                             }
                         }
@@ -153,7 +158,7 @@ impl<'a> Assembler<'a> {
                             Target::Immediate(immediate) | Target::ImmediateAddress(immediate) => {
                                 Self::push_immediate(&mut to_add, immediate);
                             }
-                            Target::Label(label) => {
+                            Target::Constant(label) => {
                                 Self::push_label_reference(
                                     &mut to_add,
                                     label,
@@ -181,7 +186,7 @@ impl<'a> Assembler<'a> {
                             Target::Immediate(immediate) | Target::ImmediateAddress(immediate) => {
                                 Self::push_immediate(&mut to_add, immediate);
                             }
-                            Target::Label(label) => {
+                            Target::Constant(label) => {
                                 Self::push_label_reference(
                                     &mut to_add,
                                     label,
@@ -222,7 +227,7 @@ impl<'a> Assembler<'a> {
                             Target::Immediate(immediate) | Target::ImmediateAddress(immediate) => {
                                 Self::push_immediate(&mut to_add, immediate);
                             }
-                            Target::Label(label) => {
+                            Target::Constant(label) => {
                                 Self::push_label_reference(
                                     &mut to_add,
                                     label,
@@ -245,41 +250,72 @@ impl<'a> Assembler<'a> {
                     }
                 }
             }
-            InstructionOrLabel::PreprocessorCommand(command) => match command {
+            InstructionOrConstant::PreprocessorCommand(command) => match command {
                 PreprocessorCommand::Offset(offset) => {
                     for _ in 0..offset {
                         self.instructions.push(IntermediaryOutput::Byte(0x0));
                     }
                     self.step();
                 }
+                PreprocessorCommand::Define(name, value) => {
+                    let name_key = name.clone();
+                    let existing_label = self
+                        .labels
+                        .insert(name_key, PreprocessorConstant::Define(value));
+                    match existing_label {
+                        Some(PreprocessorConstant::Define(v)) if v == value => {}
+                        Some(PreprocessorConstant::Label(v)) => {
+                            todo!("constant '{name}' is also the name of a label pointing to {v}")
+                        }
+                        Some(PreprocessorConstant::Define(v)) => {
+                            todo!("constants must be unique, '{name}' already exists with a value of {v}")
+                        }
+                        None => {}
+                    }
+                    self.step();
+                }
             },
-            InstructionOrLabel::Label(label) => {
+            InstructionOrConstant::Label(label) => {
                 let position = self.instructions.len();
                 let position = position.try_into().unwrap();
-                let existing_label = self.labels.insert(label.to_string(), position);
+                let existing_label = self
+                    .labels
+                    .insert(label.to_string(), PreprocessorConstant::Label(position));
                 match existing_label {
-                    Some(v) if v == position => {}
+                    Some(PreprocessorConstant::Label(v)) if v == position => {}
+                    Some(PreprocessorConstant::Define(v)) => {
+                        todo!("label '{label}' is also the name of a constant with value {v}")
+                    }
                     None => {}
-                    Some(v) => todo!("labels must be unique, label exists at {v} and {position}"),
+                    Some(PreprocessorConstant::Label(v)) => {
+                        todo!("labels must be unique, label '{label}' exists at {v} and {position}")
+                    }
                 }
                 self.current_label = Some(label.to_string());
                 self.step();
             }
-            InstructionOrLabel::SubLabel(label) => {
+            InstructionOrConstant::SubLabel(label) => {
                 let position = self.instructions.len();
                 let position = position.try_into().unwrap();
                 let Some(label_key) = self.label_key(&label) else {
                     todo!("sublabel without label");
                 };
-                let existing_label = self.labels.insert(label_key, position);
+                let existing_label = self
+                    .labels
+                    .insert(label_key, PreprocessorConstant::Label(position));
                 match existing_label {
-                    Some(v) if v == position => {}
+                    Some(PreprocessorConstant::Label(v)) if v == position => {}
+                    Some(PreprocessorConstant::Define(v)) => {
+                        todo!("label '{label}' is also the name of a constant with value {v}")
+                    }
                     None => {}
-                    Some(v) => todo!("labels must be unique, label exists at {v} and {position}"),
+                    Some(PreprocessorConstant::Label(v)) => {
+                        todo!("labels must be unique, label '{label}' exists at {v} and {position}")
+                    }
                 }
                 self.step();
             }
-            InstructionOrLabel::EOF => return true,
+            InstructionOrConstant::EOF => return true,
         }
         false
     }
@@ -292,7 +328,7 @@ impl<'a> Assembler<'a> {
         }
         let mut out = Vec::new();
         let mut instructions = self.instructions.iter();
-        use IntermediaryOutput::{Byte, LabelPadding, LabelReference};
+        use IntermediaryOutput::{Byte, ConstantPadding, ConstantReference};
 
         loop {
             let Some(next) = instructions.next() else {
@@ -300,35 +336,35 @@ impl<'a> Assembler<'a> {
             };
             match next {
                 Byte(v) => out.push(*v),
-                LabelReference(label, position) => {
+                ConstantReference(label, position) => {
                     let (label, is_abs) = match label.strip_prefix("abs_") {
                         Some(label) => (label, true),
                         None => (label.as_str(), false),
                     };
                     let Some(value) = self.labels.get(label) else {
-                        todo!("error: unrecognized label '{label}' pointing to {position}");
+                        todo!("error: unrecognized constant '{label}' with value {position}");
                     };
-                    let value = if is_abs {
-                        *value as i32
-                    } else {
-                        *value as i32 - *position as i32
+                    let value = match value {
+                        PreprocessorConstant::Define(value) => *value,
+                        PreprocessorConstant::Label(value) if is_abs => *value,
+                        PreprocessorConstant::Label(value) => {
+                            (*value as i32 - *position as i32) as u32
+                        }
                     };
                     for _ in 0..3 {
                         let Some(next) = instructions.next() else {
-                            unreachable!(
-                                "a label reference should always be followed by 3 label paddings"
-                            );
+                            unreachable!("a reference should always be followed by 3 paddings");
                         };
                         assert_eq!(
-                            next, &LabelPadding,
-                            "a label reference should always be followed by 3 label paddings"
+                            next, &ConstantPadding,
+                            "a reference should always be followed by 3 paddings"
                         );
                     }
                     for i in value.to_be_bytes() {
                         out.push(i);
                     }
                 }
-                LabelPadding => {
+                ConstantPadding => {
                     unreachable!("should consume any label padding")
                 }
             }
@@ -344,7 +380,7 @@ impl<'a> Assembler<'a> {
         self.cursor += 1;
     }
     #[must_use]
-    pub fn current(&self) -> InstructionOrLabel {
+    pub fn current(&self) -> InstructionOrConstant {
         self.inner[self.cursor].clone()
     }
 }
