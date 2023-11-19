@@ -12,14 +12,12 @@ use vc2_vm::Vm;
 
 mod utils;
 
-const VM_MEMORY_BYTES: usize = 0x30000;
-
 #[cfg(feature = "peripherals")]
 mod peripherals;
 
-fn vm_from_file(file_name: &str) -> io::Result<Vm> {
+fn vm_from_file(file_name: &str, memory_bytes: usize) -> io::Result<Vm> {
     let instructions = std::fs::read(file_name)?;
-    Ok(Vm::new(instructions, VM_MEMORY_BYTES))
+    Ok(Vm::new(instructions, memory_bytes))
 }
 
 enum WordFormat {
@@ -88,6 +86,7 @@ fn initialize_vm(vm: &mut Vm) -> Result<(), String> {
 fn execute_cmd(
     vm: &mut Arc<Mutex<Option<Vm>>>,
     buffer: &mut dyn Iterator<Item = &str>,
+    memory: usize,
 ) -> CmdResult {
     let help_menu = include_str!("help.txt");
 
@@ -99,7 +98,7 @@ fn execute_cmd(
                 println!("missing file name after `{cmd}` command");
                 return CmdResult::Continue;
             };
-            match vm_from_file(file_name) {
+            match vm_from_file(file_name, memory) {
                 Ok(mut new_vm) => {
                     let mut vm = vm.lock().unwrap();
                     initialize_vm(&mut new_vm).unwrap();
@@ -151,7 +150,7 @@ fn execute_cmd(
                 });
             }
             let mut vm = vm.lock().unwrap();
-            let mut new_vm = Vm::new(bytes, VM_MEMORY_BYTES);
+            let mut new_vm = Vm::new(bytes, memory);
             initialize_vm(&mut new_vm).unwrap();
             *vm = Some(new_vm);
             println!("vm loaded from bytes");
@@ -170,7 +169,7 @@ fn execute_cmd(
             let buffer = buffer.collect::<Vec<_>>();
             for _ in 0..amount {
                 let mut buffer = buffer.clone().into_iter();
-                let result = execute_cmd(vm, &mut buffer);
+                let result = execute_cmd(vm, &mut buffer, memory);
                 if CmdResult::Exit == result {
                     return CmdResult::Exit;
                 }
@@ -283,7 +282,7 @@ fn execute_cmd(
         None => {}
     };
     match buffer.next() {
-        Some("&&") => execute_cmd(vm, buffer),
+        Some("&&") => execute_cmd(vm, buffer, memory),
         Some(cmd) => {
             println!("unrecognized trailing input '{cmd}'");
             CmdResult::Continue
@@ -299,10 +298,29 @@ struct MyOptions {
 
     #[options(help = "log level (off, debug, warn, error)", default = "off")]
     log_level: LevelFilter,
+
+    #[options(
+        help = "memory size (in bytes)",
+        default = "0x30000",
+        parse(try_from_str = "parse_number")
+    )]
+    memory: usize,
+}
+
+fn parse_number(number: &str) -> Result<usize, String> {
+    if number.starts_with("0x") {
+        usize::from_str_radix(&number[2..], 16).map_err(|e| e.to_string())
+    } else if number.starts_with("0b") {
+        usize::from_str_radix(&number[2..], 2).map_err(|e| e.to_string())
+    } else {
+        number.parse::<usize>().map_err(|e| e.to_string())
+    }
 }
 
 fn main() -> Result<(), io::Error> {
-    let MyOptions { log_level, .. } = Options::parse_args_default_or_exit();
+    let MyOptions {
+        log_level, memory, ..
+    } = Options::parse_args_default_or_exit();
     println!("[#] vc2-inspector started");
     let mut vm: Arc<Mutex<Option<Vm>>> = Arc::new(Mutex::new(None));
     SimpleLogger::new()
@@ -323,7 +341,7 @@ fn main() -> Result<(), io::Error> {
         stdin.read_line(&mut buffer)?;
 
         let mut buffer = buffer.split(' ').map(|v| v.trim());
-        if execute_cmd(&mut vm, &mut buffer) == CmdResult::Exit {
+        if execute_cmd(&mut vm, &mut buffer, memory) == CmdResult::Exit {
             break Ok(());
         };
     }
