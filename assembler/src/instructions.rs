@@ -6,7 +6,8 @@ pub enum Target {
     ImmediateAddress(Immediate),
     Constant(String),
     ConstantAddress(String),
-    SubLabel(String),
+    SubConstant(String),
+    SubConstantAddress(String),
 }
 
 pub type Immediate = u32;
@@ -23,6 +24,7 @@ pub enum Register {
 pub enum PreprocessorCommand {
     Offset(u32),
     Define(String, u32),
+    DefineSub(String, u32),
 }
 
 #[derive(Debug, Clone)]

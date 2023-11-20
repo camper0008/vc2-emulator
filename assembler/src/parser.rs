@@ -97,7 +97,7 @@ impl<'a> Parser<'a> {
             Ok(Target::Register(register))
         } else if !word[0].is_ascii_digit() {
             if word[0] == b'.' {
-                Ok(Target::SubLabel(
+                Ok(Target::SubConstant(
                     String::from_utf8_lossy(&word[1..]).to_string(),
                 ))
             } else {
@@ -128,10 +128,11 @@ impl<'a> Parser<'a> {
                     Target::Register(register) => Target::RegisterAddress(register),
                     Target::Immediate(immediate) => Target::ImmediateAddress(immediate),
                     Target::Constant(label) => Target::ConstantAddress(label),
+                    Target::SubConstant(label) => Target::SubConstantAddress(label),
                     Target::RegisterAddress(_)
                     | Target::ImmediateAddress(_)
                     | Target::ConstantAddress(_)
-                    | Target::SubLabel(_) => unreachable!(),
+                    | Target::SubConstantAddress(_) => unreachable!(),
                 })
             }
             _ => self.parse_target_literal(),
@@ -146,6 +147,7 @@ impl<'a> Parser<'a> {
                 || !self.current().is_ascii_alphanumeric()
                     && self.current() != b'-'
                     && self.current() != b'_'
+                    && self.current() != b'@'
             {
                 break;
             }
@@ -279,13 +281,18 @@ impl<'a> Parser<'a> {
             b"define" => {
                 self.skip_whitespace();
                 let (name, _, _) = self.take_id();
+                let (name, cmd): (_, fn(_, _) -> PreprocessorCommand) = if name[0] == b'.' {
+                    (&name[1..], PreprocessorCommand::DefineSub)
+                } else {
+                    (name, PreprocessorCommand::Define)
+                };
                 let name = String::from_utf8_lossy(name).to_string();
                 self.skip_whitespace();
-                let (offset, from, to) = self.take_id();
-                let offset = Self::immediate_from_text(offset, from, to)?;
-                Ok(InstructionOrConstant::PreprocessorCommand(
-                    PreprocessorCommand::Define(name, offset),
-                ))
+                let (value, from, to) = self.take_id();
+                let offset = Self::immediate_from_text(value, from, to)?;
+                Ok(InstructionOrConstant::PreprocessorCommand(cmd(
+                    name, offset,
+                )))
             }
             _ => Err(Error {
                 from,

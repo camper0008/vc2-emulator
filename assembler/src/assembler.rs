@@ -12,7 +12,7 @@ enum PreprocessorConstant {
 pub struct Assembler<'a> {
     cursor: usize,
     inner: &'a [InstructionOrConstant],
-    labels: HashMap<String, PreprocessorConstant>,
+    constants: HashMap<String, PreprocessorConstant>,
     current_label: Option<String>,
     instructions: Vec<IntermediaryOutput>,
 }
@@ -32,15 +32,17 @@ impl<'a> Assembler<'a> {
             cursor: 0,
             instructions: Vec::new(),
             inner,
-            labels: HashMap::new(),
+            constants: HashMap::new(),
         }
     }
     fn selector_from_target(target: &Target) -> u8 {
         match target {
             Target::Register(_) => 0b00,
-            Target::Immediate(_) | Target::Constant(_) | Target::SubLabel(_) => 0b01,
+            Target::Immediate(_) | Target::Constant(_) | Target::SubConstant(_) => 0b01,
             Target::RegisterAddress(_) => 0b10,
-            Target::ImmediateAddress(_) | Target::ConstantAddress(_) => 0b11,
+            Target::ImmediateAddress(_)
+            | Target::ConstantAddress(_)
+            | Target::SubConstantAddress(_) => 0b11,
         }
     }
     fn register_byte(register: &Register) -> u8 {
@@ -126,7 +128,21 @@ impl<'a> Assembler<'a> {
                                     instruction_position,
                                 )
                             }
-                            Target::Immediate(_) | Target::Constant(_) | Target::SubLabel(_) => {
+                            Target::SubConstantAddress(label) => {
+                                let instruction_position = self.instructions.len() - 1;
+                                self.instructions.push(Byte(selector << 6));
+
+                                let Some(label) = self.label_key(&label) else {
+                                    todo!("reached sub constant without label")
+                                };
+
+                                Self::push_constant_reference(
+                                    &mut self.instructions,
+                                    label,
+                                    instruction_position,
+                                );
+                            }
+                            Target::Immediate(_) | Target::Constant(_) | Target::SubConstant(_) => {
                                 unreachable!()
                             }
                         }
@@ -171,7 +187,7 @@ impl<'a> Assembler<'a> {
                                     instruction_position,
                                 );
                             }
-                            Target::SubLabel(label) => {
+                            Target::SubConstant(label) | Target::SubConstantAddress(label) => {
                                 let Some(label) = self.label_key(&label) else {
                                     todo!("reached sub label without label")
                                 };
@@ -199,7 +215,7 @@ impl<'a> Assembler<'a> {
                                     instruction_position,
                                 );
                             }
-                            Target::SubLabel(label) => {
+                            Target::SubConstant(label) | Target::SubConstantAddress(label) => {
                                 let Some(label) = self.label_key(&label) else {
                                     todo!("reached sub label without label")
                                 };
@@ -240,7 +256,7 @@ impl<'a> Assembler<'a> {
                                     instruction_position,
                                 );
                             }
-                            Target::SubLabel(label) => {
+                            Target::SubConstant(label) | Target::SubConstantAddress(label) => {
                                 let Some(label) = self.label_key(&label) else {
                                     todo!("reached sub label without label")
                                 };
@@ -266,7 +282,7 @@ impl<'a> Assembler<'a> {
                 PreprocessorCommand::Define(name, value) => {
                     let name_key = name.clone();
                     let existing_label = self
-                        .labels
+                        .constants
                         .insert(name_key, PreprocessorConstant::Define(value));
                     match existing_label {
                         Some(PreprocessorConstant::Define(v)) if v == value => {}
@@ -280,12 +296,32 @@ impl<'a> Assembler<'a> {
                     }
                     self.step();
                 }
+                PreprocessorCommand::DefineSub(label, value) => {
+                    let Some(label) = self.label_key(&label) else {
+                        todo!("sublabel without label");
+                    };
+
+                    let existing_constant = self
+                        .constants
+                        .insert(label.clone(), PreprocessorConstant::Define(value));
+                    match existing_constant {
+                        Some(PreprocessorConstant::Define(v)) if v == value => {}
+                        Some(PreprocessorConstant::Label(v)) => {
+                            todo!("constant '{label}' is also the name of a label pointing to {v}")
+                        }
+                        Some(PreprocessorConstant::Define(v)) => {
+                            todo!("constants must be unique, '{label}' already exists with a value of {v}")
+                        }
+                        None => {}
+                    }
+                    self.step();
+                }
             },
             InstructionOrConstant::Label(label) => {
                 let position = self.instructions.len();
                 let position = position.try_into().unwrap();
                 let existing_label = self
-                    .labels
+                    .constants
                     .insert(label.to_string(), PreprocessorConstant::Label(position));
                 match existing_label {
                     Some(PreprocessorConstant::Label(v)) if v == position => {}
@@ -307,7 +343,7 @@ impl<'a> Assembler<'a> {
                     todo!("sublabel without label");
                 };
                 let existing_label = self
-                    .labels
+                    .constants
                     .insert(label_key, PreprocessorConstant::Label(position));
                 match existing_label {
                     Some(PreprocessorConstant::Label(v)) if v == position => {}
@@ -347,7 +383,7 @@ impl<'a> Assembler<'a> {
                         Some(label) => (label, true),
                         None => (name.as_str(), false),
                     };
-                    let Some(value) = self.labels.get(label) else {
+                    let Some(value) = self.constants.get(label) else {
                         todo!("error: unrecognized constant '{label}' with value {position}");
                     };
                     let value = match value {
