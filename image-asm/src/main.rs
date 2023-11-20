@@ -73,25 +73,26 @@ fn image_to_instructions(vram: u32, screen_width: u32, image: Vec<(u32, u32, Rgb
     image
         .into_iter()
         .map(|(x, y, pixel)| {
-            let mov_y = format!("mov r1, {y}");
-            let mul_screen = format!("mul r1, [{screen_width:#X}]");
-            let add_vram = format!("add r1, [{vram:#X}]");
             let add_x = if x == 0 {
                 String::new()
             } else {
                 format!("add r1, {x}")
             };
-            let add_position = format!("add r1, r0");
-            let mov_pixel = format!("mov [r1], {}", pixel_to_word(pixel));
-            [mov_y, mul_screen, add_vram, add_x, add_position, mov_pixel]
-                .into_iter()
-                .fold(String::new(), |acc, curr| {
-                    if curr == String::new() {
-                        acc
-                    } else {
-                        acc + &format!("\n    {curr}")
-                    }
-                })
+            let instructions = format!(
+                r#"
+            mov r1, {y}
+            mul r1, [{screen_width:#X}]
+            {add_x}
+            mul r1, 4
+            add r1, r0
+            add r1, [{vram:#X}]
+            mov [r1], {}
+            "#,
+                pixel_to_word(pixel)
+            );
+            instructions
+                .split_whitespace()
+                .fold(String::new(), |acc, curr| acc + &format!("\n    {curr}"))
         })
         .fold(String::new(), |acc, curr| acc + &curr)
 }
