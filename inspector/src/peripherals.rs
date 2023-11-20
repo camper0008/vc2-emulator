@@ -28,7 +28,7 @@ fn render_canvas(canvas: &mut WindowCanvas, vm: &Vm) -> Result<(), String> {
     for x in 0..SCREEN_WIDTH {
         for y in 0..SCREEN_HEIGHT {
             let pixel = vm
-                .memory_value(&(vram_address + x + y * SCREEN_WIDTH))
+                .memory_value(&(vram_address + x * 4 + y * 4 * SCREEN_WIDTH))
                 .unwrap();
 
             let r = ((pixel & 0xFF000000) >> 24) as u8;

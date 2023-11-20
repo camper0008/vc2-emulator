@@ -534,7 +534,7 @@ impl Vm {
         }
     }
     pub fn set_memory_value(&mut self, address: &Word, value: Word) -> Result<(), String> {
-        let address: usize = (address * 4)
+        let address: usize = (*address)
             .try_into()
             .map_err(invalid_architecture_message)?;
 
@@ -553,7 +553,7 @@ impl Vm {
         )
     }
     pub fn memory_value(&self, address: &Word) -> Result<Word, String> {
-        let address: usize = (address * 4)
+        let address: usize = (*address)
             .try_into()
             .map_err(invalid_architecture_message)?;
 
