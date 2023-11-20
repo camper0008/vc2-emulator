@@ -1,0 +1,17 @@
+#!/bin/bash
+
+mkdir -p tmp
+cd tmp
+cargo r --bin vc2-image-asm $(ls ../images/*.png)
+for i in $(ls *.asm); do
+    echo "    jmpabs [0x1500]" >> $i
+done
+cat *.asm > sprites.asm
+cd ..
+
+echo "jmp main" > out.asm
+echo "%offset 0xE0000" >> out.asm
+cat render.asm >> out.asm
+cat tmp/sprites.asm >> out.asm
+
+rm -r tmp

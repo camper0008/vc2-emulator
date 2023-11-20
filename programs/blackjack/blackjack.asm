@@ -5,10 +5,10 @@
 %define cmp_less_u 0x10
 
 ; background
-%define rect_color 0x10BC
-%define rect_width 0x10B0
-%define rect_height 0x10B1
-%define __card_background_drawing 0x10CB
+%define rect_color 0x1100
+%define rect_width 0x1104
+%define rect_height 0x1108
+%define __card_background_drawing 0x1110
 
 ; cards
 ; card format: 0b0RCCTTTT
@@ -19,12 +19,12 @@
 %define card_alignment 8
 %define cards_packed 4
 %define user_cards_len 0x11C0
-%define user_cards_bp 0x11C1
+%define user_cards_bp 0x11C4
 %define dealer_cards_len 0x11E0
-%define dealer_cards_bp 0x11E1
+%define dealer_cards_bp 0x11E4
 ; one bit per card, starting from the left with light red, dark red, light blue, dark blue
 %define taken_cards_0 0x11B0
-%define taken_cards_1 0x11B1
+%define taken_cards_1 0x11B4
 
 ; background colors
 %define clr_general_bg 0x44444400
@@ -59,14 +59,14 @@ main:
         mov [user_cards_len], 7
         mov [user_cards_bp], 0b01000000_01010001_01100010_01110011
         mov r1, user_cards_bp
-        add r1, 1
+        add r1, 4
         mov [r1], 0b01000100_01010101_01100110_1111_1111
         
         ; dealer cards
         mov [dealer_cards_len], 7
         mov [dealer_cards_bp], 0b01_11_0111__01_00_1000__01_01_1001__01_11_1010
         mov r1, dealer_cards_bp
-        add r1, 1
+        add r1, 4
         mov [r1], 0b01111011_01001100_00000001_1111_1111
 
         jmp draw_cards
@@ -75,21 +75,21 @@ cards_done:
     jmpabs 0xFFFFFFFF
 
 draw_cards:
-    %define .saved_return_address 0x1010
+    %define .saved_return_address 0x1210
     mov r1, [return_address]
     mov [.saved_return_address], r1
-    %define .card_bp_addr 0x1011
+    %define .card_bp_addr 0x1214
     mov [.card_bp_addr], user_cards_bp
-    %define .card_len_addr 0x1012
+    %define .card_len_addr 0x1218
     mov [.card_len_addr], user_cards_len
-    %define .y_offset_addr 0x1013
+    %define .y_offset_addr 0x1220
     mov [.y_offset_addr], 0
     .cards_inner:
         ; for i = 0; i < len; i++
-        %define .cards_index 0x1014
+        %define .cards_index 0x1224
         mov [.cards_index], 0 ; i
         .cards_loop:
-            %define .inner_idx 0x1001
+            %define .inner_idx 0x1228
 
             ; inner_idx = i % cards_packed
             mov r1, [.cards_index]
@@ -100,15 +100,16 @@ draw_cards:
             mov r1, [.cards_index]
             sub r1, [.inner_idx]
             div r1, cards_packed
-            %define .outer_idx 0x1002
+            %define .outer_idx 0x1230
             mov [.outer_idx], r1
+            mul [.outer_idx], 4
             
             ; alignment = (cards_packed - 1 - inner_idx) * card_alignment
             mov r1, cards_packed
             sub r1, 1
             sub r1, [.inner_idx]
             mul r1, card_alignment
-            %define .alignment 0x1003
+            %define .alignment 0x1234
             mov [.alignment], r1
 
             ; card = cards[outer_idx] >> alignment
@@ -116,18 +117,20 @@ draw_cards:
             add r1, [.card_bp_addr]
             mov r1, [r1]
             shr r1, [.alignment]
-            %define .card 0x1004
+            %define .card 0x1238
             mov [.card], r1
 
             ; render card
             ; offset
             mov r1, [.y_offset_addr]
             mul r1, [screen_width]
+            mul r1, 4
             mov r0, 16
             mul r0, [.cards_index]
             add r0, [screen_width]
             add r0, [.cards_index]
-            add r0, 1
+            mul r0, 4
+            add r0, 4
             add r0, r1
 
             ; figure out current color
@@ -257,21 +260,25 @@ draw_cards:
     jmpabs [return_address]
 
 draw_card_background:
+
     ; preserve real return adddress
     mov r1, [return_address]
     mov [__card_background_drawing], r1
 
-    ; shift one down
-    add r0, [screen_width]
     ; width of 16
     mov [rect_width], 16
     ; height of 22
     mov [rect_height], 22
-    mov [return_address], abs_done_drawing_card
+    mov r1, [screen_width]
+    mul r1, 4
+    add r0, r1
+    mov [return_address], .abs_done_drawing_card
     jmp draw_rect
-    done_drawing_card:
+    .done_drawing_card:
     ; reset position
-    sub r0, [screen_width]
+    mov r1, [screen_width]
+    mul r1, 4
+    sub r0, r1
     ; go back to return position
     mov r1, [__card_background_drawing]
     mov [return_address], r1
@@ -280,45 +287,42 @@ draw_card_background:
 
 draw_rect:
     ; we try to avoid overwriting the r0 register to follow the image semantics
-    mov [0x1000], 0 ; width
-    mov [0x1001], 0 ; height
-
+    %define .width 0x1D00
+    %define .height 0x1D04
+    mov [.width], 0 ; width
+    mov [.height], 0 ; height
     .loop:
-        ; adjust height to vram height
-        mov r1, [0x1001]
+        
+        ; y * screen_width + x + vram_offset
+        mov r1, [.height]
         mul r1, [screen_width]
-
-        ; add width
-        add r1, [0x1000]
-
-        ; add vram offset
+        add r1, [.width]
         add r1, [vram_location]
-
-        ; add original positioning
+        ; add caller offset
         add r1, r0
 
-        ; move background color into the fl register to avoid using r0
+        ; use fl to avoid overwriting register
         mov fl, [rect_color]
         mov [r1], fl
-        
-        ; reached end of width?
-        add [0x1000], 1
-        mov r1, [0x1000]
-        cmp r1, [rect_width]
+
+        add [.width], 4
+        mov r1, [rect_width]
+        mul r1, 4
+        cmp [.width], r1
         and fl, cmp_equal
-        ; [0x1000] != [w] && jmp
-        jz .is_not_eol, fl
-        mov [0x1000], 0
-
-        add [0x1001], 1
-
-        .is_not_eol:
-        mov r1, [0x1001]
-        cmp r1, [rect_height]
-        and fl, cmp_equal
-
-        ; [0x1009] != [h] && jmp
+        ; if x != width, draw next pixel
         jz .loop, fl
+        ; x = 0; y += 1;
+        mov [.width], 0
+        add [.height], 4
+
+        ; if y != height, draw next pixel
+        mov r1, [rect_height]
+        mul r1, 4
+        cmp [.height], r1
+        and fl, cmp_equal
+        jz .loop, fl
+
     jmpabs [return_address]
 
 done:
