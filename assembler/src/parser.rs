@@ -48,41 +48,24 @@ impl<'a> Parser<'a> {
             }
         }
     }
-    fn immediate_from_text(value: &[u8], from: Position, to: Position) -> Result<'a, u32> {
-        let value = if value.starts_with(b"0x") {
+    fn immediate_from_text(text: &[u8], from: Position, to: Position) -> Result<'a, u32> {
+        let text = {
             let from = from.clone();
             let to = to.clone();
-            let value = &value[2..];
-            i64::from_str_radix(
-                std::str::from_utf8(value).map_err(|_| Error {
-                    message: "expected valid utf_8",
-                    from,
-                    to,
-                })?,
-                16,
-            )
-        } else if value.starts_with(b"0b") {
-            let from = from.clone();
-            let to = to.clone();
-            let value = &value[2..];
-            i64::from_str_radix(
-                std::str::from_utf8(value).map_err(|_| Error {
-                    message: "expected valid utf_8",
-                    from,
-                    to,
-                })?,
-                2,
-            )
-        } else {
-            let from = from.clone();
-            let to = to.clone();
-            std::str::from_utf8(value)
+            std::str::from_utf8(text)
                 .map_err(|_| Error {
                     message: "expected valid utf_8",
                     from,
                     to,
                 })?
-                .parse::<i64>()
+                .replace('_', "")
+        };
+        let value = if text.starts_with("0x") {
+            i64::from_str_radix(&text[2..], 16)
+        } else if text.starts_with("0b") {
+            i64::from_str_radix(&text[2..], 2)
+        } else {
+            text.parse::<i64>()
         };
 
         let value = value.map_err(|_| {
