@@ -305,6 +305,7 @@ impl<'a> Parser<'a> {
         if self.done() {
             return Ok(InstructionOrConstant::EOF);
         };
+        log::debug!("current: {}", self.current() as char);
         match self.current() {
             b'%' => self.parse_preprocessor_command(),
             b';' => {
@@ -319,6 +320,7 @@ impl<'a> Parser<'a> {
             _ => {
                 let from = self.position();
                 let to = self.position();
+                self.step();
                 Err(Error {
                     message: "unexpected character",
                     from,
@@ -329,6 +331,7 @@ impl<'a> Parser<'a> {
     }
     #[must_use]
     pub fn parse(mut self) -> Vec<Result<'a, InstructionOrConstant>> {
+        log::info!("parsing...");
         let mut instructions = Vec::new();
         loop {
             if self.done() {
@@ -337,6 +340,7 @@ impl<'a> Parser<'a> {
             }
             instructions.push(self.parse_single())
         }
+        log::info!("done");
         instructions
     }
     #[must_use]

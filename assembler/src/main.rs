@@ -2,6 +2,8 @@ use std::{fs, io, str::FromStr};
 
 use gumdrop::Options;
 use itertools::{Either, Itertools};
+use log::LevelFilter;
+use simple_logger::SimpleLogger;
 use vc2_assembler::{instructions::InstructionOrConstant, Assembler};
 
 struct OutFileWrapper(String);
@@ -35,8 +37,8 @@ struct MyOptions {
     #[options(help = "write output to <file>")]
     out: OutFileWrapper,
 
-    #[options(help = "print debug output")]
-    verbose: bool,
+    #[options(help = "log level (off, debug, info, warn, error)", default = "info")]
+    log_level: LevelFilter,
 }
 
 fn read_file(path: &str) -> io::Result<String> {
@@ -46,10 +48,16 @@ fn read_file(path: &str) -> io::Result<String> {
 fn main() {
     let MyOptions {
         file: file_contents,
-        verbose,
         out: out_file,
+        log_level,
         ..
     } = Options::parse_args_default_or_exit();
+
+    SimpleLogger::new()
+        .without_timestamps()
+        .with_level(log_level)
+        .init()
+        .unwrap();
 
     let parser = vc2_assembler::Parser::new(file_contents.as_bytes());
     let node = parser.parse();
@@ -60,20 +68,26 @@ fn main() {
         });
     if !err.is_empty() {
         let error_length = if err.len() == 1 { "error" } else { "errors" };
-        println!("input has {} {error_length}:", err.len());
+        log::error!("input has {} {error_length}:", err.len());
         for err in err {
             let contents = &file_contents[err.from.cursor..=err.to.cursor]
                 .replace('\n', "\\n")
                 .replace('\r', "\\r");
             if err.from.line == err.to.line && err.from.character == err.to.character {
-                println!(
+                log::error!(
                     "@ ({}:{}) {} '{contents}'",
-                    err.from.line, err.from.character, err.message,
+                    err.from.line,
+                    err.from.character,
+                    err.message,
                 );
             } else {
-                println!(
+                log::error!(
                     "@ {}:{}-{}:{} {} '{contents}'",
-                    err.from.line, err.from.character, err.to.line, err.to.character, err.message,
+                    err.from.line,
+                    err.from.character,
+                    err.to.line,
+                    err.to.character,
+                    err.message,
                 );
             }
         }
@@ -82,15 +96,15 @@ fn main() {
     let assembler = Assembler::new(&ok);
     let out = assembler.assemble();
 
-    if verbose {
-        println!("nodes:");
-        println!("{ok:#?}");
-        println!();
-        println!("machine code:");
-        for byte in &out {
-            print!("{byte:#04X} ");
-        }
-        println!();
-    }
+    log::debug!("nodes:");
+    log::debug!("{ok:#?}");
+    log::debug!("machine code:");
+    log::debug!(
+        "{:?}",
+        out.iter()
+            .map(|byte| format!("{byte:#04X}"))
+            .reduce(|acc, v| acc + ", " + &v)
+    );
+
     fs::write(out_file.0, out).unwrap();
 }

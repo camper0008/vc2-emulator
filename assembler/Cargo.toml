@@ -1,6 +1,6 @@
 [package]
 name = "vc2-assembler"
-version = "0.1.19"
+version = "0.1.20"
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
@@ -8,6 +8,8 @@ edition = "2021"
 [dependencies]
 gumdrop = "0.8.1"
 itertools = "0.12.0"
+log = "0.4.20"
+simple_logger = "4.2.0"
 
 [dev-dependencies]
 pretty_assertions = "1.4.0"

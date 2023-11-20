@@ -363,11 +363,14 @@ impl<'a> Assembler<'a> {
     }
     #[must_use]
     pub fn assemble(mut self) -> Vec<u8> {
+        log::info!("assembling...");
         loop {
             if self.assemble_next() {
                 break;
             }
         }
+        log::info!("done");
+        log::info!("resolving symbols...");
         let mut out = Vec::new();
         let mut instructions = self.instructions.iter();
         use IntermediaryOutput::{Byte, ConstantPadding, ConstantReference};
@@ -425,6 +428,8 @@ impl<'a> Assembler<'a> {
             self.instructions.len(),
             "instructions should have same length as output so positions match"
         );
+        log::info!("done");
+
         out
     }
     pub fn step(&mut self) {
