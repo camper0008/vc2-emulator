@@ -9,7 +9,6 @@
 %define rect_width 0x10B0
 %define rect_height 0x10B1
 %define __card_background_drawing 0x10CB
-%define __cards_index 0x10CC
 
 ; cards
 ; card format: 0b0RCCTTTT
@@ -76,60 +75,71 @@ cards_done:
     jmpabs 0xFFFFFFFF
 
 draw_cards:
+    %define .saved_return_address 0x1010
     mov r1, [return_address]
-    mov [0x100F], r1
+    mov [.saved_return_address], r1
     %define .card_bp_addr 0x1011
-    %define .card_len_addr 0x1012
-    %define .y_offset_addr 0x1013
     mov [.card_bp_addr], user_cards_bp
+    %define .card_len_addr 0x1012
     mov [.card_len_addr], user_cards_len
+    %define .y_offset_addr 0x1013
     mov [.y_offset_addr], 0
     .cards_inner:
         ; for i = 0; i < len; i++
-        mov [__cards_index], 0 ; i
+        %define .cards_index 0x1014
+        mov [.cards_index], 0 ; i
         .cards_loop:
-            cmp [0], 0
+            %define .inner_idx 0x1001
+
             ; inner_idx = i % cards_packed
-            mov r1, [__cards_index]
-            mov [0x1001], r1 ; inner_idx
-            rem [0x1001], cards_packed
+            mov r1, [.cards_index]
+            mov [.inner_idx], r1 ; inner_idx
+            rem [.inner_idx], cards_packed
+            
             ; outer_idx = (i - inner_idx) / cards_packed
-            mov r1, [__cards_index]
-            sub r1, [0x1001]
+            mov r1, [.cards_index]
+            sub r1, [.inner_idx]
             div r1, cards_packed
-            mov [0x1002], r1 ; outer_idx
+            %define .outer_idx 0x1002
+            mov [.outer_idx], r1
+            
             ; alignment = (cards_packed - 1 - inner_idx) * card_alignment
             mov r1, cards_packed
             sub r1, 1
-            sub r1, [0x1001]
+            sub r1, [.inner_idx]
             mul r1, card_alignment
-            mov [0x1003], r1 ; alignment
+            %define .alignment 0x1003
+            mov [.alignment], r1
+
             ; card = cards[outer_idx] >> alignment
-            mov r1, [0x1002]
+            mov r1, [.outer_idx]
             add r1, [.card_bp_addr]
             mov r1, [r1]
-            shr r1, [0x1003]
-            mov [0x1004], r1 ; card
+            shr r1, [.alignment]
+            %define .card 0x1004
+            mov [.card], r1
+
             ; render card
             ; offset
             mov r1, [.y_offset_addr]
             mul r1, [screen_width]
             mov r0, 16
-            mul r0, [__cards_index]
+            mul r0, [.cards_index]
             add r0, [screen_width]
-            add r0, [__cards_index]
+            add r0, [.cards_index]
             add r0, 1
             add r0, r1
+
             ; figure out current color
             ; is revealed?
-            mov r1, [0x1004]
+            mov r1, [.card]
             and r1, 0b0100_0000
             mov [return_address], .abs_render_frame
             ; jmp draw back if revealed == 0
             jz card_back, r1
             .draw_card_rect:
                 ; figure out color
-                mov r1, [0x1004]
+                mov r1, [.card]
                 and r1, 0b0011_0000
                 shr r1, 4
 
@@ -156,7 +166,7 @@ draw_cards:
                 mov [rect_color], clr_dark_blue
                 jnz draw_card_background, fl
             .draw_number:
-                mov r1, [0x1004]
+                mov r1, [.card]
                 and r1, 0b0000_1111
                 ; return addr
                 mov [return_address], .abs_render_frame
@@ -220,25 +230,29 @@ draw_cards:
 
         .done_rendering_card:
             ; i++
-            add [__cards_index], 1
+            add [.cards_index], 1
             ; if i < len, jmp
             mov r1, [.card_len_addr]
             mov r1, [r1]
-            cmp [__cards_index], r1
+            cmp [.cards_index], r1
             ; if fl == 1, then i < len
             and fl, cmp_less_u
             jnz .cards_loop, fl
+            
+            ; if rendering user cards, render dealer cards
             cmp [.card_bp_addr], user_cards_bp
             and fl, cmp_equal
             mov [.card_bp_addr], dealer_cards_bp
             mov [.card_len_addr], dealer_cards_len
+
+            ; offset dealer cards
             mov r1, [screen_height]
             div r1, 2
             add r1, 1
             mov [.y_offset_addr], r1
             jnz .cards_inner, fl
 
-    mov r1, [0x100F]
+    mov r1, [.saved_return_address]
     mov [return_address], r1
     jmpabs [return_address]
 
@@ -292,7 +306,7 @@ draw_rect:
         mov r1, [0x1000]
         cmp r1, [rect_width]
         and fl, cmp_equal
-        ; [0x1010] != [w] && jmp
+        ; [0x1000] != [w] && jmp
         jz .is_not_eol, fl
         mov [0x1000], 0
 
