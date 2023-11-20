@@ -20,7 +20,7 @@ pub struct Assembler<'a> {
 #[derive(Debug, PartialEq)]
 enum IntermediaryOutput {
     Byte(u8),
-    ConstantReference(String, usize),
+    ConstantReference { name: String, position: usize },
     ConstantPadding,
 }
 
@@ -40,7 +40,7 @@ impl<'a> Assembler<'a> {
             Target::Register(_) => 0b00,
             Target::Immediate(_) | Target::Constant(_) | Target::SubLabel(_) => 0b01,
             Target::RegisterAddress(_) => 0b10,
-            Target::ImmediateAddress(_) => 0b11,
+            Target::ImmediateAddress(_) | Target::ConstantAddress(_) => 0b11,
         }
     }
     fn register_byte(register: &Register) -> u8 {
@@ -86,15 +86,12 @@ impl<'a> Assembler<'a> {
             instructions.push(IntermediaryOutput::Byte(byte));
         }
     }
-    fn push_label_reference(
+    fn push_constant_reference(
         instructions: &mut Vec<IntermediaryOutput>,
-        label: String,
-        instruction_position: usize,
+        name: String,
+        position: usize,
     ) {
-        instructions.push(IntermediaryOutput::ConstantReference(
-            label,
-            instruction_position,
-        ));
+        instructions.push(IntermediaryOutput::ConstantReference { name, position });
         instructions.push(IntermediaryOutput::ConstantPadding);
         instructions.push(IntermediaryOutput::ConstantPadding);
         instructions.push(IntermediaryOutput::ConstantPadding);
@@ -119,6 +116,15 @@ impl<'a> Assembler<'a> {
                             Target::ImmediateAddress(immediate) => {
                                 self.instructions.push(Byte(selector << 6));
                                 Self::push_immediate(&mut self.instructions, *immediate);
+                            }
+                            Target::ConstantAddress(label) => {
+                                let instruction_position = self.instructions.len() - 1;
+                                self.instructions.push(Byte(selector << 6));
+                                Self::push_constant_reference(
+                                    &mut self.instructions,
+                                    label.to_owned(),
+                                    instruction_position,
+                                )
                             }
                             Target::Immediate(_) | Target::Constant(_) | Target::SubLabel(_) => {
                                 unreachable!()
@@ -158,8 +164,8 @@ impl<'a> Assembler<'a> {
                             Target::Immediate(immediate) | Target::ImmediateAddress(immediate) => {
                                 Self::push_immediate(&mut to_add, immediate);
                             }
-                            Target::Constant(label) => {
-                                Self::push_label_reference(
+                            Target::Constant(label) | Target::ConstantAddress(label) => {
+                                Self::push_constant_reference(
                                     &mut to_add,
                                     label,
                                     instruction_position,
@@ -169,7 +175,7 @@ impl<'a> Assembler<'a> {
                                 let Some(label) = self.label_key(&label) else {
                                     todo!("reached sub label without label")
                                 };
-                                Self::push_label_reference(
+                                Self::push_constant_reference(
                                     &mut to_add,
                                     label,
                                     instruction_position,
@@ -186,8 +192,8 @@ impl<'a> Assembler<'a> {
                             Target::Immediate(immediate) | Target::ImmediateAddress(immediate) => {
                                 Self::push_immediate(&mut to_add, immediate);
                             }
-                            Target::Constant(label) => {
-                                Self::push_label_reference(
+                            Target::Constant(label) | Target::ConstantAddress(label) => {
+                                Self::push_constant_reference(
                                     &mut to_add,
                                     label,
                                     instruction_position,
@@ -197,7 +203,7 @@ impl<'a> Assembler<'a> {
                                 let Some(label) = self.label_key(&label) else {
                                     todo!("reached sub label without label")
                                 };
-                                Self::push_label_reference(
+                                Self::push_constant_reference(
                                     &mut to_add,
                                     label,
                                     instruction_position,
@@ -227,8 +233,8 @@ impl<'a> Assembler<'a> {
                             Target::Immediate(immediate) | Target::ImmediateAddress(immediate) => {
                                 Self::push_immediate(&mut to_add, immediate);
                             }
-                            Target::Constant(label) => {
-                                Self::push_label_reference(
+                            Target::Constant(label) | Target::ConstantAddress(label) => {
+                                Self::push_constant_reference(
                                     &mut to_add,
                                     label,
                                     instruction_position,
@@ -238,7 +244,7 @@ impl<'a> Assembler<'a> {
                                 let Some(label) = self.label_key(&label) else {
                                     todo!("reached sub label without label")
                                 };
-                                Self::push_label_reference(
+                                Self::push_constant_reference(
                                     &mut to_add,
                                     label,
                                     instruction_position,
@@ -336,10 +342,10 @@ impl<'a> Assembler<'a> {
             };
             match next {
                 Byte(v) => out.push(*v),
-                ConstantReference(label, position) => {
-                    let (label, is_abs) = match label.strip_prefix("abs_") {
+                ConstantReference { name, position } => {
+                    let (label, is_abs) = match name.strip_prefix("abs_") {
                         Some(label) => (label, true),
-                        None => (label.as_str(), false),
+                        None => (name.as_str(), false),
                     };
                     let Some(value) = self.labels.get(label) else {
                         todo!("error: unrecognized constant '{label}' with value {position}");

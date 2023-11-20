@@ -5,6 +5,7 @@ pub enum Target {
     Immediate(Immediate),
     ImmediateAddress(Immediate),
     Constant(String),
+    ConstantAddress(String),
     SubLabel(String),
 }
 

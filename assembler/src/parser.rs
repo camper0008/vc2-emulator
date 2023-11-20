@@ -144,9 +144,10 @@ impl<'a> Parser<'a> {
                 Ok(match target {
                     Target::Register(register) => Target::RegisterAddress(register),
                     Target::Immediate(immediate) => Target::ImmediateAddress(immediate),
+                    Target::Constant(label) => Target::ConstantAddress(label),
                     Target::RegisterAddress(_)
                     | Target::ImmediateAddress(_)
-                    | Target::Constant(_)
+                    | Target::ConstantAddress(_)
                     | Target::SubLabel(_) => unreachable!(),
                 })
             }
