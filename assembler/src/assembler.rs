@@ -380,10 +380,19 @@ impl<'a> Assembler<'a> {
                 Byte(v) => out.push(*v),
                 ConstantReference { name, position } => {
                     let (label, is_abs) = match name.strip_prefix("abs_") {
-                        Some(label) => (label, true),
-                        None => (name.as_str(), false),
+                        Some(label) => (label.to_string(), true),
+                        None => match name.find("@") {
+                            None => (name.to_owned(), false),
+                            Some(sub_split) => {
+                                let (main, sub) = name.split_at(sub_split);
+                                match sub.strip_prefix("@abs_") {
+                                    Some(label) => (format!("{main}@{label}"), true),
+                                    None => (name.to_owned(), false),
+                                }
+                            }
+                        },
                     };
-                    let Some(value) = self.constants.get(label) else {
+                    let Some(value) = self.constants.get(&label) else {
                         todo!("error: unrecognized constant '{label}' with value {position}");
                     };
                     let value = match value {
