@@ -305,6 +305,9 @@ struct MyOptions {
         parse(try_from_str = "parse_number")
     )]
     memory: usize,
+
+    #[options(free, help = "starting input")]
+    starting_input: String,
 }
 
 fn parse_number(number: &str) -> Result<usize, String> {
@@ -319,7 +322,10 @@ fn parse_number(number: &str) -> Result<usize, String> {
 
 fn main() -> Result<(), io::Error> {
     let MyOptions {
-        log_level, memory, ..
+        log_level,
+        memory,
+        starting_input,
+        ..
     } = Options::parse_args_default_or_exit();
     println!("[#] vc2-inspector started");
     let mut vm: Arc<Mutex<Option<Vm>>> = Arc::new(Mutex::new(None));
@@ -332,6 +338,13 @@ fn main() -> Result<(), io::Error> {
 
     #[cfg(feature = "peripherals")]
     peripherals::window(vm.clone());
+
+    if starting_input.len() > 0 {
+        let mut buffer = starting_input.split(' ').map(|v| v.trim());
+        if execute_cmd(&mut vm, &mut buffer, memory) == CmdResult::Exit {
+            return Ok(());
+        };
+    }
 
     loop {
         print!("> ");
