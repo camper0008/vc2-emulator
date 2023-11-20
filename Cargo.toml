@@ -5,4 +5,5 @@ members = [
     "inspector",
     "assembler",
     "image-asm",
+    "number-info",
 ]
