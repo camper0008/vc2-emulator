@@ -1,3 +1,5 @@
+use std::borrow::Cow;
+
 #[derive(Clone, Debug)]
 pub struct Position {
     pub cursor: usize,
@@ -7,7 +9,7 @@ pub struct Position {
 
 #[derive(Debug)]
 pub struct Error<'a> {
-    pub message: &'a str,
+    pub message: Cow<'a, str>,
     pub from: Position,
     pub to: Position,
 }

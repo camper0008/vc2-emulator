@@ -1,3 +1,5 @@
+use std::borrow::Cow;
+
 use crate::instructions::{
     instruction_from_text, Instruction, InstructionOrConstant, NamedInstruction,
     PreprocessorCommand, Register, Target,
@@ -44,7 +46,11 @@ impl<'a> Parser<'a> {
                 c if c.is_ascii_whitespace() => {
                     self.step();
                 }
-                _ => break Some(self.invalid_character_error("expected end of line, got")),
+                c => {
+                    break Some(self.invalid_character_error(Cow::Owned(format!(
+                        "expected end of line, got '{c}'"
+                    ))))
+                }
             }
         }
     }
@@ -52,13 +58,60 @@ impl<'a> Parser<'a> {
         let text = {
             let from = from.clone();
             let to = to.clone();
-            std::str::from_utf8(text)
-                .map_err(|_| Error {
-                    message: "expected valid utf_8",
-                    from,
-                    to,
-                })?
-                .replace('_', "")
+            let text = std::str::from_utf8(text).map_err(|_| Error {
+                message: Cow::Borrowed("expected valid utf_8"),
+                from: from.clone(),
+                to: from.clone(),
+            })?;
+            if &text[0..1] == "'" {
+                let mut bytes = text.bytes();
+                let Some(start_quote) = bytes.next() else {
+                    unreachable!("just asserted length to be >= 1");
+                };
+                assert_eq!(start_quote, b'\'');
+                let Some(byte) = bytes.next() else {
+                    return Err(Error {
+                        message: Cow::Borrowed("unexpected end of char literal"),
+                        from,
+                        to,
+                    });
+                };
+                let byte = if byte == b'\\' {
+                    let Some(byte) = bytes.next() else {
+                        return Err(Error {
+                            message: Cow::Borrowed("unexpected end of char literal"),
+                            from,
+                            to,
+                        });
+                    };
+                    Self::escaped_char_to_value(byte, from.clone(), to.clone())?
+                } else {
+                    byte
+                };
+
+                let Some(end_quote) = bytes.next() else {
+                    return Err(Error {
+                        message: Cow::Borrowed("unexpected end of char literal"),
+                        from,
+                        to,
+                    });
+                };
+
+                if end_quote != b'\'' {
+                    return Err(Error {
+                        message: Cow::Owned(format!(
+                            "expected single quote ('), got '{}'",
+                            end_quote
+                        )),
+                        from,
+                        to,
+                    });
+                }
+
+                return Ok(byte.into());
+            } else {
+                text.replace('_', "")
+            }
         };
         let value = if text.starts_with("0x") {
             i64::from_str_radix(&text[2..], 16)
@@ -73,17 +126,15 @@ impl<'a> Parser<'a> {
             let to = to.clone();
 
             Error {
-                message: "invalid i64",
+                message: Cow::Borrowed("invalid i64"),
                 from,
                 to,
             }
         })?;
 
-        if (value < 0 && (value > i64::from(i32::MAX) || value < i64::from(i32::MIN)))
-            || value > i64::from(u32::MAX)
-        {
+        if value > i64::from(u32::MAX) {
             return Err(Error {
-                message: "number not within i32/u32 bounds",
+                message: Cow::Borrowed("number not within i32/u32 bounds"),
                 from,
                 to,
             });
@@ -121,7 +172,10 @@ impl<'a> Parser<'a> {
                     } else if self.current().is_ascii_whitespace() {
                         self.step();
                     } else {
-                        return Err(self.invalid_character_error("expected ']'"));
+                        return Err(self.invalid_character_error(Cow::Owned(format!(
+                            "expected ']', got '{}'",
+                            self.current() as char
+                        ))));
                     };
                 }
                 Ok(match target {
@@ -148,6 +202,8 @@ impl<'a> Parser<'a> {
                     && self.current() != b'-'
                     && self.current() != b'_'
                     && self.current() != b'@'
+                    && self.current() != b'\''
+                    && self.current() != b'\\'
             {
                 break;
             }
@@ -159,7 +215,7 @@ impl<'a> Parser<'a> {
             word_end,
         )
     }
-    fn invalid_character_error(&mut self, message: &'a str) -> Error<'a> {
+    fn invalid_character_error(&mut self, message: Cow<'a, str>) -> Error<'a> {
         let from = self.position();
         let to = self.position();
         self.skip_line();
@@ -204,7 +260,10 @@ impl<'a> Parser<'a> {
                 let target_0 = self.parse_target()?;
                 self.skip_whitespace();
                 if self.current() != b',' {
-                    return Err(self.invalid_character_error("expected character ',', got"));
+                    return Err(self.invalid_character_error(Cow::Owned(format!(
+                        "expected character ':' for label, got '{}'",
+                        self.current() as char
+                    ))));
                 }
                 self.step();
                 self.skip_whitespace();
@@ -223,12 +282,12 @@ impl<'a> Parser<'a> {
         variant: &LabelVariant,
     ) -> Result<'a, InstructionOrConstant> {
         if self.current() != b':' {
-            return Err(self.invalid_character_error("expected character ':' for label, got"));
+            return Err(self.invalid_character_error(Cow::Owned(format!(
+                "expected character ':' for label, got '{}'",
+                self.current() as char
+            ))));
         }
         self.step();
-        if let Some(err) = self.ensure_no_dangling_arguments() {
-            return Err(err);
-        }
         let text = String::from_utf8_lossy(text).to_string();
         match variant {
             LabelVariant::Label => Ok(InstructionOrConstant::Label(text)),
@@ -237,9 +296,8 @@ impl<'a> Parser<'a> {
     }
     fn parse_db(&mut self) -> Result<'a, InstructionOrConstant> {
         let mut bytes = Vec::new();
-        loop {
+        'db_loop: loop {
             let current = self.current();
-            println!("{current}");
             if current.is_ascii_whitespace() {
                 if current == b'\n' {
                     self.skip_whitespace();
@@ -248,6 +306,28 @@ impl<'a> Parser<'a> {
                 self.step();
                 continue;
             };
+            if self.current() == b'"' {
+                'string_loop: loop {
+                    self.step();
+                    if self.done() || self.current() == b'\n' {
+                        return Err(self.invalid_character_error(Cow::Borrowed(
+                            "unexpected end of string literal",
+                        )));
+                    } else if self.current() == b'\\' {
+                        self.step();
+                        let from = self.position();
+                        let to = self.position();
+                        let char = self.current();
+                        let byte = Self::escaped_char_to_value(char, from, to)?;
+                        bytes.push(byte);
+                        continue 'string_loop;
+                    } else if self.current() == b'"' {
+                        self.step();
+                        continue 'db_loop;
+                    }
+                    bytes.push(self.current())
+                }
+            }
             let (text, from, to) = self.take_id();
             let byte = Self::immediate_from_text(text, from.clone(), to.clone())?;
             let byte = byte.try_into().map_err(|e| {
@@ -255,7 +335,7 @@ impl<'a> Parser<'a> {
                 Error {
                     from,
                     to,
-                    message: "expected u8, got value > 255",
+                    message: Cow::Borrowed("expected u8, got value > 255"),
                 }
             })?;
             bytes.push(byte);
@@ -338,10 +418,13 @@ impl<'a> Parser<'a> {
                     name, offset,
                 )))
             }
-            _ => Err(Error {
+            cmd => Err(Error {
                 from,
                 to,
-                message: "unknown preprocessor command",
+                message: std::borrow::Cow::Owned(format!(
+                    "unknown preprocessor command '{}'",
+                    String::from_utf8_lossy(cmd)
+                )),
             }),
         }
     }
@@ -361,12 +444,12 @@ impl<'a> Parser<'a> {
                 self.step();
                 self.parse_single()
             }
-            _ => {
+            c => {
                 let from = self.position();
                 let to = self.position();
                 self.step();
                 Err(Error {
-                    message: "unexpected character",
+                    message: Cow::Owned(format!("unexpected character {c}")),
                     from,
                     to,
                 })
@@ -395,6 +478,25 @@ impl<'a> Parser<'a> {
             line: 1,
             cursor: 0,
         }
+    }
+
+    fn escaped_char_to_value(char: u8, from: Position, to: Position) -> Result<'a, u8> {
+        let char = match char {
+            b'n' => b'\n',
+            b'r' => b'\r',
+            b't' => b'\t',
+            b'0' => b'\0',
+            b'\\' => b'\\',
+            b'\'' => b'\'',
+            b'\"' => b'"',
+            c => return Err(Error {
+                message:
+                    Cow::Owned(format!("unexpected escape char {c}, only \\0, \\n, \\r, \\t, \\' \\\" and \\\\ are supported.")),
+                from,
+                to,
+            }),
+        };
+        Ok(char)
     }
 
     fn current(&self) -> u8 {
