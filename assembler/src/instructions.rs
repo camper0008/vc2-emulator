@@ -23,6 +23,8 @@ pub enum Register {
 #[derive(Debug, Clone)]
 pub enum PreprocessorCommand {
     Offset(u32),
+    DeclareBytes(Vec<u8>),
+    DeclareWord(u32),
     Define(String, u32),
     DefineSub(String, u32),
 }

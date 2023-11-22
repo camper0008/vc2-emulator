@@ -316,6 +316,18 @@ impl<'a> Assembler<'a> {
                     }
                     self.step();
                 }
+                PreprocessorCommand::DeclareBytes(bytes) => {
+                    for byte in bytes {
+                        self.instructions.push(IntermediaryOutput::Byte(byte));
+                    }
+                    self.step();
+                }
+                PreprocessorCommand::DeclareWord(bytes) => {
+                    for byte in bytes.to_be_bytes() {
+                        self.instructions.push(IntermediaryOutput::Byte(byte));
+                    }
+                    self.step();
+                }
             },
             InstructionOrConstant::Label(label) => {
                 let position = self.instructions.len();

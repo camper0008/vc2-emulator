@@ -240,7 +240,46 @@ impl<'a> Parser<'a> {
             LabelVariant::SubLabel => Ok(InstructionOrConstant::SubLabel(text)),
         }
     }
-    fn parse_label_or_instruction(&mut self) -> Result<'a, InstructionOrConstant> {
+    fn parse_db(&mut self) -> Result<'a, InstructionOrConstant> {
+        let mut bytes = Vec::new();
+        loop {
+            let current = self.current();
+            println!("{current}");
+            if current.is_ascii_whitespace() {
+                if current == b'\n' {
+                    self.skip_whitespace();
+                    break;
+                }
+                self.step();
+                continue;
+            };
+            let (text, from, to) = self.take_id();
+            let byte = Self::immediate_from_text(text, from.clone(), to.clone())?;
+            let byte = byte.try_into().map_err(|e| {
+                log::debug!("error parsing u8 after db: {e}");
+                Error {
+                    from,
+                    to,
+                    message: "expected u8, got value > 255",
+                }
+            })?;
+            bytes.push(byte);
+        }
+        Ok(InstructionOrConstant::PreprocessorCommand(
+            PreprocessorCommand::DeclareBytes(bytes),
+        ))
+    }
+    fn parse_dw(&mut self) -> Result<'a, InstructionOrConstant> {
+        let (text, from, to) = self.take_id();
+        let word = Self::immediate_from_text(text, from, to)?;
+        if let Some(err) = self.ensure_no_dangling_arguments() {
+            return Err(err);
+        };
+        Ok(InstructionOrConstant::PreprocessorCommand(
+            PreprocessorCommand::DeclareWord(word),
+        ))
+    }
+    fn parse_directive_or_instruction(&mut self) -> Result<'a, InstructionOrConstant> {
         let label_variant = if self.current() == b'.' {
             self.step();
             LabelVariant::SubLabel
@@ -251,7 +290,17 @@ impl<'a> Parser<'a> {
         let id = id.to_vec();
         match instruction_from_text(&id) {
             Some(instruction) => self.parse_instruction(&instruction),
-            None => self.parse_label(&id, &label_variant),
+            None => match &id[..] {
+                b"db" => {
+                    self.step();
+                    self.parse_db()
+                }
+                b"dw" => {
+                    self.step();
+                    self.parse_dw()
+                }
+                _ => self.parse_label(&id, &label_variant),
+            },
         }
     }
     fn position(&self) -> Position {
@@ -312,7 +361,7 @@ impl<'a> Parser<'a> {
                 self.skip_line();
                 self.parse_single()
             }
-            b'A'..=b'Z' | b'a'..=b'z' | b'.' => self.parse_label_or_instruction(),
+            b'A'..=b'Z' | b'a'..=b'z' | b'.' => self.parse_directive_or_instruction(),
             c if c.is_ascii_whitespace() => {
                 self.step();
                 self.parse_single()
