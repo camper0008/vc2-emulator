@@ -723,7 +723,6 @@ impl Vm {
         &mut self,
         config: ConditionalJmpConfig,
         variant: ConditionalJmpVariant,
-        instruction_location: u32,
     ) -> Result<(), String> {
         let should_jump = match variant {
             ConditionalJmpVariant::Jz => |source| source == 0,
@@ -785,10 +784,7 @@ impl Vm {
         };
 
         if should_jump(source) {
-            self.set_register_value(
-                &Register::ProgramCounter,
-                (instruction_location as i32 + destination as i32) as u32,
-            )
+            self.set_register_value(&Register::ProgramCounter, destination)
         }
 
         Ok(())
@@ -875,10 +871,10 @@ impl Vm {
             Instruction::Cmp(config) => self.run_cmp(config)?,
             Instruction::Jmp(config) => self.run_jmp(config)?,
             Instruction::Jz(config) => {
-                self.run_conditional_jmp(config, ConditionalJmpVariant::Jz, instruction_location)?
+                self.run_conditional_jmp(config, ConditionalJmpVariant::Jz)?
             }
             Instruction::Jnz(config) => {
-                self.run_conditional_jmp(config, ConditionalJmpVariant::Jnz, instruction_location)?
+                self.run_conditional_jmp(config, ConditionalJmpVariant::Jnz)?
             }
         }
         Ok(())

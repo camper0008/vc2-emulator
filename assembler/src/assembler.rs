@@ -390,36 +390,22 @@ impl<'a> Assembler<'a> {
             match next {
                 Byte(v) => out.push(*v),
                 ConstantReference { name, position } => {
-                    let (label, is_abs) = match name.strip_prefix("abs_") {
-                        Some(label) => (label.to_string(), true),
-                        None => match name.find("@") {
-                            None => (name.to_owned(), false),
-                            Some(sub_split) => {
-                                let (main, sub) = name.split_at(sub_split);
-                                match sub.strip_prefix("@abs_") {
-                                    Some(label) => (format!("{main}@{label}"), true),
-                                    None => (name.to_owned(), false),
-                                }
-                            }
-                        },
-                    };
-                    let Some(value) = self.constants.get(&label) else {
-                        todo!("error: unrecognized constant '{label}' with value {position}");
+                    let Some(value) = self.constants.get(name.as_str()) else {
+                        todo!("error: unrecognized constant '{name}' with value {position}");
                     };
                     let value = match value {
-                        PreprocessorConstant::Define(value) => *value,
-                        PreprocessorConstant::Label(value) if is_abs => *value,
-                        PreprocessorConstant::Label(value) => {
-                            (*value as i32 - *position as i32) as u32
-                        }
+                        PreprocessorConstant::Define(value)
+                        | PreprocessorConstant::Label(value) => *value,
                     };
                     for _ in 0..3 {
                         let Some(next) = instructions.next() else {
-                            unreachable!("a reference should always be followed by 3 paddings");
+                            unreachable!(
+                                "a constant reference should always be followed by 3 paddings"
+                            );
                         };
                         assert_eq!(
                             next, &ConstantPadding,
-                            "a reference should always be followed by 3 paddings"
+                            "a constant reference should always be followed by 3 paddings"
                         );
                     }
                     for i in value.to_be_bytes() {
@@ -427,7 +413,7 @@ impl<'a> Assembler<'a> {
                     }
                 }
                 ConstantPadding => {
-                    unreachable!("should consume any label padding")
+                    unreachable!("should consume any padding")
                 }
             }
         }
