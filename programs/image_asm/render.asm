@@ -1,5 +1,5 @@
 main:
-    mov [0x1500], abs_end
+    mov [0x1500], end
     mov r0, [0x203C]
     add r0, 48 ; 12 * 4
     mul r0, [0x2038]

@@ -131,8 +131,7 @@ wait_for_keypress:
     hlt
 
 prepare:
-    ; abs_ prefix means absolute position instead of relative position in preprocessor
-    mov [KEY_CALLBACK], abs_key_event_happened
+    mov [KEY_CALLBACK], key_event_happened
     ; set defaults
     mov [SELECTED_COLOR], 0xFF000000
     mov [CURSOR], PAINT_BUFFER_START_INDEX

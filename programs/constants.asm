@@ -13,6 +13,6 @@ two:
     .label:
         %define .sub 3
         mov r1, .sub
-    mov r0, [abs_sp]
-    mov r1, [abs_bp]
-    jmpabs 0xFFFFFFFF
+    mov r0, [sp]
+    mov r1, [bp]
+    jmp 0xFFFFFFFF

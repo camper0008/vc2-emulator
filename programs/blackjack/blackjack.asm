@@ -50,10 +50,10 @@ main:
         mov [rect_height], r1
         mov [rect_color], clr_general_bg
         mov r0, 0
-        mov [return_address], abs_bg_done
+        mov [return_address], bg_done
         jmp draw_rect
     bg_done:
-        mov [return_address], abs_cards_done
+        mov [return_address], cards_done
         
         ; user cards
         mov [user_cards_len], 7
@@ -72,7 +72,7 @@ main:
         jmp draw_cards
 
 cards_done:
-    jmpabs 0xFFFFFFFF
+    jmp 0xFFFFFFFF
 
 draw_cards:
     %define .saved_return_address 0x1210
@@ -137,7 +137,7 @@ draw_cards:
             ; is revealed?
             mov r1, [.card]
             and r1, 0b0100_0000
-            mov [return_address], .abs_render_frame
+            mov [return_address], .render_frame
             ; jmp draw back if revealed == 0
             jz card_back, r1
             .draw_card_rect:
@@ -147,7 +147,7 @@ draw_cards:
                 shr r1, 4
 
                 ; return addr
-                mov [return_address], .abs_draw_number
+                mov [return_address], .draw_number
                 ; select clr 
                 cmp r1, 0
                 and fl, cmp_equal
@@ -172,7 +172,7 @@ draw_cards:
                 mov r1, [.card]
                 and r1, 0b0000_1111
                 ; return addr
-                mov [return_address], .abs_render_frame
+                mov [return_address], .render_frame
                 ; select clr 
                 cmp r1, 0
                 and fl, cmp_equal
@@ -228,7 +228,7 @@ draw_cards:
 
             ; draw frame
             .render_frame:
-                mov [return_address], .abs_done_rendering_card
+                mov [return_address], .done_rendering_card
                 jmp card_frame
 
         .done_rendering_card:
@@ -257,7 +257,7 @@ draw_cards:
 
     mov r1, [.saved_return_address]
     mov [return_address], r1
-    jmpabs [return_address]
+    jmp [return_address]
 
 draw_card_background:
 
@@ -272,7 +272,7 @@ draw_card_background:
     mov r1, [screen_width]
     mul r1, 4
     add r0, r1
-    mov [return_address], .abs_done_drawing_card
+    mov [return_address], .done_drawing_card
     jmp draw_rect
     .done_drawing_card:
     ; reset position
@@ -282,7 +282,7 @@ draw_card_background:
     ; go back to return position
     mov r1, [__card_background_drawing]
     mov [return_address], r1
-    jmpabs [return_address]
+    jmp [return_address]
     
 
 draw_rect:
@@ -323,7 +323,7 @@ draw_rect:
         and fl, cmp_equal
         jz .loop, fl
 
-    jmpabs [return_address]
+    jmp [return_address]
 
 done:
-    jmpabs 0xFFFFFF
+    jmp 0xFFFFFF
