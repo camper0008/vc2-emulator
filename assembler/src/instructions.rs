@@ -57,7 +57,7 @@ pub enum Instruction {
     IDiv(Target, Target),
     Rem(Target, Target),
     Cmp(Target, Target),
-    Jmp(Target, JmpVariant),
+    Jmp(Target),
     Jz(Target, Target),
     Jnz(Target, Target),
 }
@@ -82,7 +82,6 @@ pub enum NamedInstruction {
     Rem,
     Cmp,
     Jmp,
-    JmpAbs,
     Jz,
     Jnz,
 }
@@ -108,15 +107,8 @@ pub fn instruction_from_text(text: &[u8]) -> Option<NamedInstruction> {
         b"rem" => Some(NamedInstruction::Rem),
         b"cmp" => Some(NamedInstruction::Cmp),
         b"jmp" => Some(NamedInstruction::Jmp),
-        b"jmpabs" => Some(NamedInstruction::JmpAbs),
         b"jz" => Some(NamedInstruction::Jz),
         b"jnz" => Some(NamedInstruction::Jnz),
         _ => None,
     }
-}
-
-#[derive(Debug, Clone)]
-pub enum JmpVariant {
-    Absolute,
-    Relative,
 }

@@ -1,5 +1,5 @@
 use crate::instructions::{
-    instruction_from_text, Instruction, InstructionOrConstant, JmpVariant, NamedInstruction,
+    instruction_from_text, Instruction, InstructionOrConstant, NamedInstruction,
     PreprocessorCommand, Register, Target,
 };
 
@@ -193,12 +193,7 @@ impl<'a> Parser<'a> {
             NamedInstruction::IDiv => InstructionConstructor::Two(Instruction::IDiv),
             NamedInstruction::Rem => InstructionConstructor::Two(Instruction::Rem),
             NamedInstruction::Cmp => InstructionConstructor::Two(Instruction::Cmp),
-            NamedInstruction::Jmp => {
-                InstructionConstructor::One(|target| Instruction::Jmp(target, JmpVariant::Relative))
-            }
-            NamedInstruction::JmpAbs => {
-                InstructionConstructor::One(|target| Instruction::Jmp(target, JmpVariant::Absolute))
-            }
+            NamedInstruction::Jmp => InstructionConstructor::One(|target| Instruction::Jmp(target)),
             NamedInstruction::Jz => InstructionConstructor::Two(Instruction::Jz),
             NamedInstruction::Jnz => InstructionConstructor::Two(Instruction::Jnz),
         };

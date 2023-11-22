@@ -147,7 +147,7 @@ pub enum Instruction {
     IDiv(Config),
     Rem(Config),
     Cmp(Config),
-    Jmp(JmpConfig, JmpVariant),
+    Jmp(JmpConfig),
     Jz(ConditionalJmpConfig),
     Jnz(ConditionalJmpConfig),
 }
@@ -403,12 +403,6 @@ impl Vm {
 
         let selector = ((input & 0b1100_0000) >> 6).try_into()?;
         let destination = ((input & 0b0000_1100) >> 2).try_into();
-        let is_absolute = (input & 0b0000_0001) != 0;
-        let variant = if is_absolute {
-            JmpVariant::Absolute
-        } else {
-            JmpVariant::Relative
-        };
 
         let config = match selector {
             Selector::Register => JmpConfig::Register(destination?),
@@ -417,7 +411,7 @@ impl Vm {
             Selector::ImmediateAddress => JmpConfig::ImmediateAddress(self.consume_immediate()?),
         };
 
-        Ok(Instruction::Jmp(config, variant))
+        Ok(Instruction::Jmp(config))
     }
 
     fn parse_conditional_jmp(&mut self) -> Result<Instruction, String> {
@@ -800,12 +794,7 @@ impl Vm {
         Ok(())
     }
 
-    fn run_jmp(
-        &mut self,
-        config: JmpConfig,
-        variant: JmpVariant,
-        instruction_location: u32,
-    ) -> Result<(), String> {
+    fn run_jmp(&mut self, config: JmpConfig) -> Result<(), String> {
         let destination = match config {
             JmpConfig::Register(register) => self.register_value(&register),
             JmpConfig::Immediate(immediate) => immediate,
@@ -815,16 +804,10 @@ impl Vm {
             JmpConfig::ImmediateAddress(immediate) => self.memory_value(&immediate)?,
         };
 
-        match variant {
-            JmpVariant::Absolute => self.set_register_value(&Register::ProgramCounter, destination),
-            JmpVariant::Relative => self.set_register_value(
-                &Register::ProgramCounter,
-                instruction_location.wrapping_add_signed(destination as i32),
-            ),
-        };
+        self.set_register_value(&Register::ProgramCounter, destination);
 
         log::debug!(
-            "jmp: pc={:#04X} dest={destination:#04X} instruction={instruction_location:#04X}",
+            "jmp: pc={:#04X} dest={destination:#04X}",
             self.register_value(&Register::ProgramCounter),
         );
 
@@ -890,9 +873,7 @@ impl Vm {
             Instruction::IDiv(config) => self.run_generic_math_op(config, MathOpVariant::IDiv)?,
             Instruction::Rem(config) => self.run_generic_math_op(config, MathOpVariant::Rem)?,
             Instruction::Cmp(config) => self.run_cmp(config)?,
-            Instruction::Jmp(config, variant) => {
-                self.run_jmp(config, variant, instruction_location)?
-            }
+            Instruction::Jmp(config) => self.run_jmp(config)?,
             Instruction::Jz(config) => {
                 self.run_conditional_jmp(config, ConditionalJmpVariant::Jz, instruction_location)?
             }

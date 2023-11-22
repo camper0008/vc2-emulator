@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use crate::instructions::{
-    Instruction, InstructionOrConstant, JmpVariant, PreprocessorCommand, Register, Target,
+    Instruction, InstructionOrConstant, PreprocessorCommand, Register, Target,
 };
 
 enum PreprocessorConstant {
@@ -78,7 +78,7 @@ impl<'a> Assembler<'a> {
             Instruction::IDiv(_, _) => 0x0e,
             Instruction::Rem(_, _) => 0x0f,
             Instruction::Cmp(_, _) => 0x10,
-            Instruction::Jmp(_, _) => 0x11,
+            Instruction::Jmp(_) => 0x11,
             Instruction::Jz(_, _) => 0x12,
             Instruction::Jnz(_, _) => 0x13,
         }
@@ -229,14 +229,10 @@ impl<'a> Assembler<'a> {
                         self.instructions.append(&mut to_add);
                         self.step();
                     }
-                    Instruction::Jmp(dest, variant) => {
+                    Instruction::Jmp(dest) => {
                         let dest_selector = Self::selector_from_target(&dest);
                         let mut to_add = Vec::new();
-                        let variant = match variant {
-                            JmpVariant::Absolute => 1,
-                            JmpVariant::Relative => 0,
-                        };
-                        to_add.push(Byte(dest_selector << 6 | variant));
+                        to_add.push(Byte(dest_selector << 6));
                         let instruction_position = self.instructions.len() - 1;
 
                         match dest {
