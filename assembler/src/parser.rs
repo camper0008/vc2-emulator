@@ -298,7 +298,8 @@ impl<'a> Parser<'a> {
         let mut bytes = Vec::new();
         'db_loop: loop {
             let current = self.current();
-            if current.is_ascii_whitespace() {
+            /* commas are optional */
+            if current.is_ascii_whitespace() || self.current() == b',' {
                 if current == b'\n' {
                     self.skip_whitespace();
                     break;
