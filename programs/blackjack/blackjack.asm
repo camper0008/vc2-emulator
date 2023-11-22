@@ -64,7 +64,7 @@ main:
         
         ; dealer cards
         mov [dealer_cards_len], 7
-        mov [dealer_cards_bp], 0b01_11_0111__01_00_1000__01_01_1001__01_11_1010
+        mov [dealer_cards_bp], 0b01_11_0111__01_00_1000__01_01_1001__01_10_1010
         mov r1, dealer_cards_bp
         add r1, 4
         mov [r1], 0b01111011_01001100_00000001_1111_1111
