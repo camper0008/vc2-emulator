@@ -4,7 +4,7 @@ mkdir -p tmp
 cd tmp
 cargo r --bin vc2-image-asm $(ls ../images/*.png)
 for i in $(ls *.asm); do
-    echo "    jmp [0x1500]" >> $i
+    echo "    jmp [image_draw_return_address]" >> $i
 done
 cat *.asm > sprites.asm
 cd ..

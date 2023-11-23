@@ -5,10 +5,10 @@
 %define cmp_less_u 0x10
 
 ; background
-%define rect_color 0x1100
-%define rect_width 0x1104
-%define rect_height 0x1108
-%define __card_background_drawing 0x1110
+rect_color: dw 0
+rect_width: dw 0
+rect_height: dw 0
+card_background_drawing: dw 0
 
 ; cards
 ; card format: 0b0RCCTTTT
@@ -18,13 +18,16 @@
 ; there are 4 cards packed per word, first from the left
 %define card_alignment 8
 %define cards_packed 4
-%define user_cards_len 0x11C0
-%define user_cards_bp 0x11C4
-%define dealer_cards_len 0x11E0
-%define dealer_cards_bp 0x11E4
-; one bit per card, starting from the left with light red, dark red, light blue, dark blue
-%define taken_cards_0 0x11B0
-%define taken_cards_1 0x11B4
+user_cards_len: dw 0
+user_cards_bp: dw 0
+%offset_word 1
+dealer_cards_len: dw 0
+dealer_cards_bp: dw 0
+%offset_word 1
+
+; one bit per card, starting from the left with light red 0-12, dark red 0-12, light blue 0-12, dark blue 0-12
+taken_cards_0: dw 0b11111111_11111111_11111111_11111111
+taken_cards_1: dw 0b11111111_11111111_11110000_00000000
 
 ; background colors
 %define clr_general_bg 0x44444400
@@ -40,7 +43,7 @@
 
 ; image + background
 ; r0 = start offset
-%define return_address 0x1500 ; as done by linker in the case of image
+image_draw_return_address: dw 0 ; as done by linker in the case of image
 
 main:
     .bg:
@@ -50,10 +53,10 @@ main:
         mov [rect_height], r1
         mov [rect_color], clr_general_bg
         mov r0, 0
-        mov [return_address], bg_done
+        mov [image_draw_return_address], bg_done
         jmp draw_rect
     bg_done:
-        mov [return_address], cards_done
+        mov [image_draw_return_address], cards_done
         
         ; user cards
         mov [user_cards_len], 7
@@ -74,9 +77,36 @@ main:
 cards_done:
     jmp 0xFFFFFFFF
 
+
+; push_card_return_address: dw 0
+; push_card_value: dw 0
+; push_card_len_addr: dw 0
+; push_card:
+;     ; bp = len_ptr + 4
+
+;     ; r0 = (*cards_len - inner_idx) / 4
+;     mov r0, [push_card_len_addr]
+;     mov r0, [r0]
+;     mov r1, r0
+;     rem r1, 4
+;     sub r0, r1
+;     div r0, 4
+
+;     ; r0 = outer_idx + cards_bp
+;     add r0, 4
+;     add r0, [push_card_len_addr]
+    
+;     ; r1 = word >> inner_idx * 8
+;     mul r1, 8
+;     shr [push_card_value], r1
+;     mov r1, [push_card_value]
+;     ; [r0] |= word
+;     or [r0], r1
+;     jmp [push_card_return_address]
+
 draw_cards:
     %define .saved_return_address 0x1210
-    mov r1, [return_address]
+    mov r1, [image_draw_return_address]
     mov [.saved_return_address], r1
     %define .card_bp_addr 0x1214
     mov [.card_bp_addr], user_cards_bp
@@ -137,7 +167,7 @@ draw_cards:
             ; is revealed?
             mov r1, [.card]
             and r1, 0b0100_0000
-            mov [return_address], .render_frame
+            mov [image_draw_return_address], .render_frame
             ; jmp draw back if revealed == 0
             jz card_back, r1
             .draw_card_rect:
@@ -147,7 +177,7 @@ draw_cards:
                 shr r1, 4
 
                 ; return addr
-                mov [return_address], .draw_number
+                mov [image_draw_return_address], .draw_number
                 ; select clr 
                 cmp r1, 0
                 and fl, cmp_equal
@@ -172,7 +202,7 @@ draw_cards:
                 mov r1, [.card]
                 and r1, 0b0000_1111
                 ; return addr
-                mov [return_address], .render_frame
+                mov [image_draw_return_address], .render_frame
                 ; select clr 
                 cmp r1, 0
                 and fl, cmp_equal
@@ -228,7 +258,7 @@ draw_cards:
 
             ; draw frame
             .render_frame:
-                mov [return_address], .done_rendering_card
+                mov [image_draw_return_address], .done_rendering_card
                 jmp card_frame
 
         .done_rendering_card:
@@ -256,14 +286,14 @@ draw_cards:
             jnz .cards_inner, fl
 
     mov r1, [.saved_return_address]
-    mov [return_address], r1
-    jmp [return_address]
+    mov [image_draw_return_address], r1
+    jmp [image_draw_return_address]
 
 draw_card_background:
 
     ; preserve real return adddress
-    mov r1, [return_address]
-    mov [__card_background_drawing], r1
+    mov r1, [image_draw_return_address]
+    mov [card_background_drawing], r1
 
     ; width of 16
     mov [rect_width], 16
@@ -272,7 +302,7 @@ draw_card_background:
     mov r1, [screen_width]
     mul r1, 4
     add r0, r1
-    mov [return_address], .done_drawing_card
+    mov [image_draw_return_address], .done_drawing_card
     jmp draw_rect
     .done_drawing_card:
     ; reset position
@@ -280,9 +310,9 @@ draw_card_background:
     mul r1, 4
     sub r0, r1
     ; go back to return position
-    mov r1, [__card_background_drawing]
-    mov [return_address], r1
-    jmp [return_address]
+    mov r1, [card_background_drawing]
+    mov [image_draw_return_address], r1
+    jmp [image_draw_return_address]
     
 
 draw_rect:
@@ -323,7 +353,7 @@ draw_rect:
         and fl, cmp_equal
         jz .loop, fl
 
-    jmp [return_address]
+    jmp [image_draw_return_address]
 
 done:
     jmp 0xFFFFFF
