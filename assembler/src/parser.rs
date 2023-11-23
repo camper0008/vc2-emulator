@@ -400,7 +400,7 @@ impl<'a> Parser<'a> {
                 let (offset, from, to) = self.take_id();
                 let offset = Self::immediate_from_text(offset, from, to)?;
                 Ok(InstructionOrConstant::PreprocessorCommand(
-                    PreprocessorCommand::Offset(offset * 32),
+                    PreprocessorCommand::Offset(offset * 4),
                 ))
             }
             b"offset" => {
