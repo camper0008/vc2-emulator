@@ -48,7 +48,8 @@ impl<'a> Parser<'a> {
                 }
                 c => {
                     break Some(self.invalid_character_error(Cow::Owned(format!(
-                        "expected end of line, got '{c}'"
+                        "expected end of line, got '{}'",
+                        c as char
                     ))))
                 }
             }
@@ -101,7 +102,7 @@ impl<'a> Parser<'a> {
                     return Err(Error {
                         message: Cow::Owned(format!(
                             "expected single quote ('), got '{}'",
-                            end_quote
+                            end_quote as char
                         )),
                         from,
                         to,
