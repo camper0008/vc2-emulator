@@ -35,7 +35,7 @@ taken_cards:
     dw 0b00000000000111111111111111111111
 
 ; background colors
-%define clr_general_bg 0x44444400
+%define clr_general_bg 0x22222200
 %define clr_light_orange 0xF69A7900
 %define clr_dark_orange 0xC03C0C00
 %define clr_light_blue 0xABA4CB00
@@ -65,23 +65,38 @@ increment_seed:
     jmp [seed_increment_return_address]
 
 main:
-    mov [keyboard_callback], .randomness_is_seeded
-    mov [seed_increment_return_address], increment_seed
-    jmp increment_seed
+    .initial_bg:
+        mov r1, [screen_width]
+        mov [rect_width], r1
+        mov r1, [screen_height]
+        mov [rect_height], r1
+        mov [rect_color], clr_dark_blue
+        mov r0, 0
+        mov [image_draw_return_address], .initial_bg_done
+        jmp draw_rect
+    .initial_bg_done:
+
+    mov [image_draw_return_address], .start_text_drawn
+    jmp intro
+
+    .start_text_drawn:
+        mov [keyboard_callback], .randomness_is_seeded
+        mov [seed_increment_return_address], increment_seed
+        jmp increment_seed
     .randomness_is_seeded:
-    mov [keyboard_callback], 0
+        mov [keyboard_callback], 0
 
-    ; .bg:
-    ;     mov r1, [screen_width]
-    ;     mov [rect_width], r1
-    ;     mov r1, [screen_height]
-    ;     mov [rect_height], r1
-    ;     mov [rect_color], clr_general_bg
-    ;     mov r0, 0
-    ;     mov [image_draw_return_address], .bg_done
-    ;     jmp draw_rect
-
+        mov r1, [screen_width]
+        mov [rect_width], r1
+        mov r1, [screen_height]
+        mov [rect_height], r1
+        mov [rect_color], clr_general_bg
+        mov r0, 0
+        mov [image_draw_return_address], .bg_done
+        jmp draw_rect
     .bg_done:
+
+    .push_initial_cards:
         mov [push_card_len_addr], user_cards_len
         mov [push_card_return_address], .l0
         jmp push_card
@@ -89,17 +104,15 @@ main:
         mov [push_card_return_address], .l1
         jmp push_card
         .l1:
+        mov [push_card_len_addr], dealer_cards_len
         mov [push_card_return_address], .l2
         jmp push_card
         .l2:
+        mov [push_card_initial_card], 0
         mov [push_card_len_addr], dealer_cards_len
         mov [push_card_return_address], .l3
         jmp push_card
         .l3:
-        mov [push_card_len_addr], dealer_cards_len
-        mov [push_card_return_address], .l4
-        jmp push_card
-        .l4:
 
         mov [image_draw_return_address], .cards_done
         jmp draw_cards
@@ -131,7 +144,8 @@ set_card_from_index:
 
     ; set value based on card
     ; revealed
-    mov [push_card_value], 0b0100_0000
+    mov r0, [push_card_initial_card]
+    mov [push_card_value], r0
     ; color
     mov r0, [taken_card_index]
 
@@ -150,6 +164,7 @@ set_card_from_index:
     shl [push_card_value], 24
     jmp push_card@card_set
 
+push_card_initial_card: dw 0b0100_0000
 push_card_return_address: dw 0
 push_card_value: dw 0
 push_card_len_addr: dw 0
