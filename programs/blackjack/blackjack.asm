@@ -134,7 +134,12 @@ set_card_from_index:
     mov [push_card_value], 0b0100_0000
     ; color
     mov r0, [taken_card_index]
-    div r0, 4
+
+    mov r1, r0
+    rem r1, 13
+
+    sub r0, r1
+    div r0, 13
     shl r0, 4
     or [push_card_value], r0
     ; type
