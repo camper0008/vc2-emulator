@@ -159,7 +159,7 @@ push_card:
         .seed_incremented:
         mov r0, [seed]
         add [taken_card_index], r0
-        rem [taken_card_index], 53
+        rem [taken_card_index], 52
         jmp set_card_from_index
 
     .card_set:
