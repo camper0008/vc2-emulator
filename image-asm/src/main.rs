@@ -90,9 +90,9 @@ fn image_to_instructions(vram: u32, screen_width: u32, image: Vec<(u32, u32, Rgb
             "#,
                 pixel_to_word(pixel)
             );
-            instructions
-                .split_whitespace()
-                .fold(String::new(), |acc, curr| acc + &format!("\n    {curr}"))
+            instructions.split("\n").fold(String::new(), |acc, curr| {
+                acc + &format!("\n    {}", curr.trim())
+            })
         })
         .fold(String::new(), |acc, curr| acc + &curr)
 }
