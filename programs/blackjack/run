@@ -4,5 +4,5 @@ set +xe
 
 rm out.asm
 
-./link-images && cargo r --bin vc2-assembler -- -f out.asm && cargo r --release --bin vc2-inspector -- -m 0xFFFFFF $@ "load out.o && eval"
+./link-images && cargo r --bin vc2-assembler -- -f out.asm && cargo r --release --bin vc2-inspector -- -m 0xFFFFFFFF $@ "load out.o && eval"
 
