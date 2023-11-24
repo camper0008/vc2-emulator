@@ -46,7 +46,8 @@ taken_cards:
 %define screen_width 0x2038
 %define screen_height 0x203C
 %define keyboard_callback 0x202C
-%define keyboard_keycode 0x2028
+%define keyboard_scancode 0x2028
+%define keyboard_event_type 0x2024
 
 ; image + background
 ; r0 = start offset
@@ -55,7 +56,7 @@ image_draw_return_address: dw 0 ; as done by linker in the case of image
 %define seed_modulus 0x8000_0000
 %define seed_multiplier 1103515245
 %define seed_increment 12345
-seed: dw 180504
+seed: dw 2228321880
 seed_increment_return_address: dw 0
 
 increment_seed:
@@ -63,6 +64,213 @@ increment_seed:
     add [seed], seed_increment
     rem [seed], seed_modulus
     jmp [seed_increment_return_address]
+
+user_index_counter: dw 0
+user_value_counter: dw 0
+dealer_index_counter: dw 0
+dealer_value_counter: dw 0
+
+keyboard_event_happened:
+    mov [keyboard_callback], 0
+
+    %define .sdl_scancode_h 0x00B
+    %define .sdl_scancode_s 0x016
+    
+    sub [keyboard_event_type], 2
+    jnz .not_release, [keyboard_event_type]
+
+    .check_if_h:
+        cmp [keyboard_scancode], .sdl_scancode_h
+        and fl, cmp_equal
+        jz .check_if_s, fl
+        cmp [user_cards_len], 7
+        and fl, cmp_equal
+        jnz .check_if_s, fl
+
+        mov [push_card_initial_card], 0b0100_0000
+        mov [push_card_len_addr], user_cards_len
+        mov [push_card_return_address], .card_pushed
+        jmp push_card
+        .card_pushed:
+            mov [image_draw_return_address], .check_win_condition
+            jmp draw_cards
+    .check_if_s:
+        cmp [keyboard_scancode], .sdl_scancode_s
+        and fl, cmp_equal
+        jz .check_win_condition, fl
+        ; draw some cards while dealer < 17
+        .if_s__count_dealer_pts:
+            ; push card to dealer
+            mov [push_card_initial_card], 0b0100_0000
+            mov [push_card_len_addr], dealer_cards_len
+            mov [push_card_return_address], .count_if_not_end
+            mov r0, [dealer_cards_len]
+            mov [dealer_index_counter], r0
+            jmp push_card
+            .count_if_not_end:
+                sub [dealer_index_counter], 1
+                mov r1, [dealer_index_counter]
+                rem r1, 4
+                mov r0, [dealer_index_counter]
+                sub r0, r1
+                add r0, dealer_cards_bp
+                mov r0, [r0]
+                mul r1, 8
+                add r1, 8
+                shl r0, r1
+                and r0, 0b0000_1111
+                add r0, 1
+                cmp r0, 10
+                and fl, cmp_less_u
+                jnz .if_s__dealer_less_than_10, fl
+                mov r0, 10
+                .if_s__dealer_less_than_10:
+                add [dealer_value_counter], r0
+                jnz .count_if_not_end, [dealer_index_counter]
+            ; if dealer_pts < 17 -> 1
+            cmp [dealer_value_counter], 17
+            and fl, cmp_less_u
+            jz .if_s__count_dealer_pts, fl
+                
+        ; reveal the cards
+        or [dealer_cards_bp], 0b0100_0000_0100_0000_0100_0000_0100_0000
+        ; draw revealed cards
+        mov [image_draw_return_address], .check_win_condition
+        jmp draw_cards
+
+    .check_win_condition:
+        mov r0, [user_cards_len]
+        mov [user_index_counter], r0 
+        mov [user_value_counter], 0
+        mov r0, [dealer_cards_len]
+        mov [dealer_index_counter], r0 
+        mov [dealer_value_counter], 0
+        .count_user_pts:
+            sub [user_index_counter], 1
+
+            ; r0 = outer_idx ( (len - (len % 4))/4 * 4 )
+            mov r1, [user_index_counter]
+            rem r1, 4
+            mov r0, [user_index_counter]
+            sub r0, r1
+
+            ; r0 = outer_idx + cards_base
+            add r0, user_cards_bp
+            ; r0 = card
+            mov r0, [r0]
+            ; card = [r0] << (inner_idx*8 + 8)
+            ; inner = 2
+            ; 0x00_00_FF_00
+            ; inner << 2*8
+            ; 0xFF_00_00_00
+            ; inner << 8
+            ; 0x00_00_00_FF
+            mul r1, 8
+            add r1, 8
+            shl r0, r1
+            ; get card value
+            and r0, 0b0000_1111
+            ; our points dont start at 0
+            add r0, 1
+            ; if value > 10, then value = 10 (image cards are all 10)
+            cmp r0, 10
+            and fl, cmp_less_u
+            jnz .user_less_than_10, fl
+            mov r0, 10
+            .user_less_than_10:
+            ; add value
+            add [user_value_counter], r0
+
+            jnz .count_user_pts, [user_index_counter]
+        
+        ; do the same for the dealer
+
+        .count_dealer_pts:
+            sub [dealer_index_counter], 1
+            mov r1, [dealer_index_counter]
+            rem r1, 4
+            mov r0, [dealer_index_counter]
+            sub r0, r1
+            add r0, dealer_cards_bp
+            mov r0, [r0]
+            mul r1, 8
+            add r1, 8
+            shl r0, r1
+            and r0, 0b0000_1111
+            add r0, 1
+            cmp r0, 10
+            and fl, cmp_less_u
+            jnz .dealer_less_than_10, fl
+            mov r0, 10
+            .dealer_less_than_10:
+            add [dealer_value_counter], r0
+            jnz .count_dealer_pts, [dealer_index_counter]
+
+        ; check for tie if score = 21
+        cmp [user_value_counter], 21
+        and fl, cmp_equal
+        jnz .player_maybe_won, fl
+
+        ; lost if > 21
+        cmp [user_value_counter], 21
+        and fl, cmp_less_u
+        jz draw_player_status@lost, fl
+
+        ; if player didnt lose, check if dealer > player if player did stand, else check if dealer lost
+        cmp [keyboard_scancode], .sdl_scancode_s
+        and fl, cmp_equal
+        jz .check_dealer_lost, fl
+        mov r0, [dealer_value_counter]
+        ; if user < dealer, fl > 0
+        cmp [user_value_counter], r0
+        and fl, cmp_less_u
+        jnz draw_player_status@lost, fl
+        jmp draw_player_status@won
+
+        .player_maybe_won:
+        cmp [dealer_value_counter], 21
+        and fl, cmp_equal
+        jnz draw_player_status@tie, fl
+        jmp draw_player_status@won
+
+        .check_dealer_lost:
+        cmp [dealer_value_counter], 21
+        and fl, cmp_less_u
+        jz draw_player_status@won, fl
+
+    .not_release:
+        mov [keyboard_callback], keyboard_event_happened
+        hlt
+
+draw_player_status:
+    .lost:
+        mov [rect_color], 0xCC000000
+        jmp .draw
+    .won:
+        mov [rect_color], 0x00CC0000
+        jmp .draw
+    .tie:
+        mov [rect_color], 0xCCCCCC00
+        jmp .draw
+    .draw:
+        mov r1, [screen_width]
+        mov [rect_width], r1
+        mov r1, 1
+        mov [rect_height], r1
+        mov r0, [screen_height]
+        mul r0, [screen_width]
+        sub r0, [screen_width]
+        mul r0, 4
+        mov [image_draw_return_address], .done
+        jmp draw_rect
+    .done:
+        ; reveal dealer card
+        or [dealer_cards_bp], 0b0100_0000_0100_0000_0100_0000_0100_0000
+        ; draw revealed cards
+        mov [image_draw_return_address], .cards_drawn
+        jmp draw_cards
+        .cards_drawn:
+            hlt
 
 main:
     .initial_bg:
@@ -85,13 +293,7 @@ main:
         jmp increment_seed
     .randomness_is_seeded:
         mov [keyboard_callback], 0
-
-        mov r1, [screen_width]
-        mov [rect_width], r1
-        mov r1, [screen_height]
-        mov [rect_height], r1
         mov [rect_color], clr_general_bg
-        mov r0, 0
         mov [image_draw_return_address], .bg_done
         jmp draw_rect
     .bg_done:
@@ -118,8 +320,8 @@ main:
         jmp draw_cards
 
     .cards_done:
-        mov r0, [seed]
-        jmp 0xFFFFFFFF
+        mov [keyboard_callback], keyboard_event_happened
+        hlt
 
 set_card_from_index:
     ; card_mask = [taken_cards + r1] >> r0
@@ -184,16 +386,16 @@ push_card:
     ; reset any carrying bit from seed incrementing
     and fl, 0
 
+    ; r0 = outer_idx ( (len - (len % 4))/4 * 4 )
     mov r0, [push_card_len_addr]
     mov r0, [r0]
     mov r1, r0
     rem r1, 4
     sub r0, r1
-    div r0, 4
 
-    ; r0 = outer_idx + cards_bp
-    add r0, 4
+    ; r0 = outer_idx + cards_base
     add r0, [push_card_len_addr]
+    add r0, 4
     
     ; r1 = word >> inner_idx * 8
     mul r1, 8
